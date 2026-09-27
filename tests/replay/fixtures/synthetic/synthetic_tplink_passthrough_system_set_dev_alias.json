@@ -1,0 +1,6 @@
+{
+  "error_code": 0,
+  "result": {
+    "responseData": "{\"system\":{\"set_dev_alias\":{\"err_code\":0}}}"
+  }
+}

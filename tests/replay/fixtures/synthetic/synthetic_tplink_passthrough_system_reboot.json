@@ -1,0 +1,6 @@
+{
+  "error_code": 0,
+  "result": {
+    "responseData": "{\"system\":{\"reboot\":{\"err_code\":0}}}"
+  }
+}

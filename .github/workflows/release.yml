@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GOWORK: 'off'
+      GOTOOLCHAIN: local
+      PUBLIC_MODULE: github.com/portpowered/go-tplink
+      PUBLIC_PACKAGES: 'pkg/tplink,pkg/tplinkmodels'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check public API compatibility
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: go run ./tools/compatibility -policy release -base previous-release -version "$VERSION" -module "$PUBLIC_MODULE" -packages "$PUBLIC_PACKAGES"
+      - name: Test
+        run: go test -race ./...
+      - name: Enforce replay coverage floor
+        run: go run ./tools/replaycoverage
+      - name: Vet
+        run: go vet ./...
+      - name: Verify public module from a consumer
+        env:
+          VERSION: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          check_dir="$(mktemp -d)"
+          cd "$check_dir"
+          go mod init example.com/module-check
+          module_ready=false
+          for attempt in {1..6}; do
+            if go get "${PUBLIC_MODULE}@${VERSION}"; then
+              module_ready=true
+              break
+            fi
+            echo "Module not available through the Go proxy yet (attempt ${attempt}/6)"
+            sleep 10
+          done
+          if [ "$module_ready" != true ]; then
+            echo "Could not fetch the tagged module after six attempts."
+            exit 1
+          fi
+          cat > main.go <<EOF
+          package main
+
+          import (
+              "context"
+              "${PUBLIC_MODULE}/pkg/tplink"
+          )
+
+          var _ tplink.ClientInterface = (*tplink.Client)(nil)
+
+          func main() {
+              _, _ = tplink.NewClient()
+              _ = context.Background()
+          }
+          EOF
+          go test ./...
+      - name: Publish release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
+        run: gh release create "$VERSION" --verify-tag --generate-notes

@@ -1,0 +1,10 @@
+{
+  "error_code": 0,
+  "result": {
+    "accountId": "acc-123456",
+    "token": "test-auth-token-abc123",
+    "email": "user@example.com",
+    "regTime": "2020-01-01 00:00:00",
+    "countryCode": "US"
+  }
+}

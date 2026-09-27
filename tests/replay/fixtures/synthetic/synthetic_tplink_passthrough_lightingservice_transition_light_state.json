@@ -1,0 +1,6 @@
+{
+  "error_code": 0,
+  "result": {
+    "responseData": "{\"smartlife.iot.smartbulb.lightingservice\":{\"transition_light_state\":{\"err_code\":0}}}"
+  }
+}

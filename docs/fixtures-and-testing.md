@@ -1,0 +1,54 @@
+# Fixtures and testing
+
+Normal tests are designed to run offline and without TP-Link credentials.
+They exercise the client at the HTTP boundary and check provider request
+encoding, response decoding, and typed errors.
+
+## Fixture provenance
+
+The former backend wrapper contained JSON files under
+`portos-backend/integrations/go-tplink/test/fixtures/`. They used placeholder
+account and device identifiers and had no adjacent capture notes, collection
+date, source, or redaction record. Their origin cannot be verified. The
+migration classifies them as **synthetic**, not captured. They test expected
+wire shapes and error handling, but they do not establish that a live TP-Link
+service returned those bytes.
+
+Synthetic fixtures belong under
+`tests/replay/fixtures/synthetic/` and their names or neighboring notes should
+keep that classification visible. Do not move these files into a `captured/`
+directory or describe them as sanitized live captures.
+
+If a future live or instrumented capture is added, keep it separately under
+`tests/replay/fixtures/captured/`. Add a neighboring provenance note with the
+operation, UTC capture date, source category, capture boundary, behavior
+preserved, and redactions. Remove credentials, tokens, cookies, email addresses,
+account identifiers, device IDs, MAC addresses, and other personal or
+account-linked data before committing it.
+
+## Local checks
+
+Run these from the repository root:
+
+| Purpose | Command | Credentials | Notes |
+| --- | --- | --- | --- |
+| Build | `make build` | No | Builds all module packages |
+| Test | `make test` | No | Runs `go test -race ./...`; use only synthetic/offline test data |
+| Format | `make fmt` | No | Runs `go fmt ./...` |
+| Vet | `make lint` | No | The current lint target runs `go vet ./...` |
+| Combined check | `make check` | No | Runs lint, build, and test |
+| API compatibility report | `make api-compatibility` | No | Compares exported API with the previous release when one exists |
+
+## Replay coverage
+
+`make check` and CI run the offline replay suite against `pkg/tplink` with Go
+statement coverage enabled. The gate requires at least 90% of client package
+statements to execute; the profile is written to a temporary directory and
+removed after the check.
+
+There is no separate integration-test or live-test target: the module currently
+has no live-account test harness, and ordinary checks must remain independent
+of real accounts and devices. There is no dedicated docs-check target; review
+Markdown links and examples when documentation changes. A separate read-only
+device-list example requires user-provided credentials and is documented in
+the README; it is not part of CI.

@@ -1,0 +1,6 @@
+{
+  "error_code": 0,
+  "result": {
+    "responseData": "{\"system\":{\"get_sysinfo\":{\"sw_ver\":\"1.5.6 Build 191125 Rel.083657\",\"hw_ver\":\"2.1\",\"model\":\"HS105(US)\",\"deviceId\":\"device-plug-001\",\"alias\":\"Living Room Plug\",\"relay_state\":1,\"on_time\":3600,\"err_code\":0}}}"
+  }
+}

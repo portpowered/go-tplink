@@ -1,0 +1,79 @@
+{
+  "error_code": 0,
+  "result": {
+    "deviceList": [
+      {
+        "deviceType": "IOT.SMARTPLUGSWITCH",
+        "deviceId": "device-plug-001",
+        "alias": "Living Room Plug",
+        "deviceModel": "HS105(US)",
+        "deviceMac": "AABBCCDDEEFF",
+        "fwVer": "1.5.6 Build 191125 Rel.083657",
+        "deviceHwVer": "2.1",
+        "hwId": "hw-id-plug-001",
+        "fwId": "fw-id-plug-001",
+        "oemId": "oem-id-plug-001",
+        "appServerUrl": "https://use1-wap.tplinkcloud.com",
+        "deviceRegion": "us-east-1",
+        "status": 1,
+        "isSameRegion": true
+      },
+      {
+        "deviceType": "IOT.SMARTBULB",
+        "deviceId": "device-bulb-001",
+        "alias": "Bedroom Bulb",
+        "deviceModel": "LB130(US)",
+        "deviceMac": "112233445566",
+        "fwVer": "1.8.11 Build 210120 Rel.085103",
+        "deviceHwVer": "1.0",
+        "hwId": "hw-id-bulb-001",
+        "fwId": "fw-id-bulb-001",
+        "oemId": "oem-id-bulb-001",
+        "appServerUrl": "https://use1-wap.tplinkcloud.com",
+        "deviceRegion": "us-east-1",
+        "status": 1,
+        "isSameRegion": true,
+        "is_dimmable": 1,
+        "is_color": 1,
+        "is_variable_color_temp": 1,
+        "brightness": 80
+      },
+      {
+        "deviceType": "IOT.RANGEEXTENDER.SMARTPLUG",
+        "deviceId": "device-ext-001",
+        "alias": "Garage Extender Plug",
+        "deviceModel": "RE270K(US)",
+        "deviceMac": "FFEEDDCCBBAA",
+        "fwVer": "1.0.3 Build 180309 Rel.140530",
+        "deviceHwVer": "1.0",
+        "hwId": "hw-id-ext-001",
+        "fwId": "fw-id-ext-001",
+        "oemId": "oem-id-ext-001",
+        "appServerUrl": "https://use1-wap.tplinkcloud.com",
+        "deviceRegion": "us-east-1",
+        "status": 1,
+        "isSameRegion": true
+      },
+      {
+        "deviceType": "IOT.SMARTBULB",
+        "deviceId": "device-bulb-002",
+        "alias": "Kitchen Bulb",
+        "deviceModel": "LB100(US)",
+        "deviceMac": "AABB11223344",
+        "fwVer": "1.8.11 Build 210120 Rel.085103",
+        "deviceHwVer": "1.0",
+        "hwId": "hw-id-bulb-002",
+        "fwId": "fw-id-bulb-002",
+        "oemId": "oem-id-bulb-002",
+        "appServerUrl": "https://use1-wap.tplinkcloud.com",
+        "deviceRegion": "us-east-1",
+        "status": 0,
+        "isSameRegion": false,
+        "is_dimmable": 1,
+        "is_color": 0,
+        "is_variable_color_temp": 0,
+        "brightness": 50
+      }
+    ]
+  }
+}

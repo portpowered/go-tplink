@@ -1,0 +1,6 @@
+{
+  "error_code": 0,
+  "result": {
+    "responseData": "{\"smartlife.iot.smartbulb.lightingservice\":{\"get_light_state\":{\"on_off\":1,\"brightness\":75,\"hue\":240,\"saturation\":80,\"color_temp\":0,\"mode\":\"normal\",\"err_code\":0}}}"
+  }
+}
