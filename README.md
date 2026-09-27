@@ -7,10 +7,10 @@ responsible for credential storage and their own device workflows.
 
 ## Getting started
 
-After the first public release, install the module with:
+Install the released `v0.1.0` module with:
 
 ```sh
-go get github.com/portpowered/go-tplink
+go get github.com/portpowered/go-tplink@v0.1.0
 ```
 
 The public client is in `github.com/portpowered/go-tplink/pkg/tplink`; provider
@@ -83,9 +83,9 @@ The library exchanges an email and password for an opaque provider session
 token. It does not persist credentials, and the supported provider surface has
 no token refresh operation. When the provider rejects an expired token, the
 application must request credentials again and call `Login`. Treat the token
-and token-bearing request URLs as secrets. The backend integration currently
-owns auth-link and secret persistence; the standalone backend cutover is
-described in [the migration plan](docs/backend-migration.md).
+and token-bearing request URLs as secrets. The backend integration owns
+auth-link and secret persistence; the adapter boundary and cutover checklist
+are described in [the backend migration guide](docs/backend-migration.md).
 
 ## Supported scope
 

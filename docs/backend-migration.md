@@ -1,9 +1,10 @@
 # Port OS backend migration
 
-The standalone module is the provider-client boundary. The existing Port OS
-integration remains the application adapter until its dependency is switched
-to this module and the backend contract checks pass. This documentation does
-not imply that the cutover has already happened.
+The standalone module is the provider-client boundary and is released as
+`v0.1.0`. This guide records the adapter boundary and the initial cutover
+checklist; it is not a live status page for the backend migration. Check the
+backend's module dependency and contract checks to confirm a consumer's current
+state. The standalone module remains independent of `portos-backend`.
 
 The matrix was checked against the former client under
 `portos-backend/integrations/go-tplink/pkg/tplink/` and its consumer under
@@ -38,7 +39,7 @@ temperature added from the capability flags. Preserve that behavior during the
 initial adapter cutover; expand it only alongside explicit product and protocol
 decisions.
 
-## Adapter cutover steps
+## Adapter cutover checklist
 
 1. Point the backend module to the standalone `github.com/portpowered/go-tplink`
    module and use the standalone package imports.
