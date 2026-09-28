@@ -1,11 +1,38 @@
 package replay_test
 
 import (
+	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"strings"
 	"testing"
 )
+
+func TestEverySyntheticReplayFixtureHasRequestAndResponse(t *testing.T) {
+	paths, err := fs.Glob(fixtureFiles, "fixtures/synthetic/synthetic_tplink_*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("no synthetic replay fixtures")
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			data, err := fixtureFiles.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var exchange fixtureExchange
+			if err := json.Unmarshal(data, &exchange); err != nil {
+				t.Fatal(err)
+			}
+			if exchange.Request.Method == "" || exchange.Request.Origin == "" || len(exchange.Request.Operations) == 0 || exchange.Response.Status == 0 || len(exchange.Response.Body) == 0 {
+				t.Fatal("fixture is missing its request or response")
+			}
+		})
+	}
+}
 
 func TestReplayFixtureRejectsRequestOutsidePair(t *testing.T) {
 	transport := newReplayTransport()
