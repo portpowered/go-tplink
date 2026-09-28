@@ -72,7 +72,8 @@ func TestClientConfigurationErrors(t *testing.T) {
 	})
 
 	t.Run("nil context", func(t *testing.T) {
-		client, _ := newTestClient(t)
+		client, transport := newTestClient(t)
+		transport.expectCalls(0)
 		_, err := client.GetDevices(nil, tplink.GetDevicesRequest{
 			Auth: tplink.AuthContext{AccessToken: "test-token"},
 		})

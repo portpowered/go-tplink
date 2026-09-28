@@ -21,6 +21,11 @@ func newTestClient(t *testing.T) (*tplink.Client, *replayTransport) {
 	t.Helper()
 
 	transport := newReplayTransport()
+	t.Cleanup(func() {
+		if err := transport.assertConsumed(); err != nil {
+			t.Error(err)
+		}
+	})
 	client := newTestClientWithDoer(t, &http.Client{Transport: transport})
 	return client, transport
 }
@@ -39,6 +44,7 @@ func newTestClientWithDoer(t *testing.T, doer tplink.HTTPDoer) *tplink.Client {
 
 func TestLoginAndDeviceListReplay(t *testing.T) {
 	client, transport := newTestClient(t)
+	transport.expectSequence("login", "getDeviceList", "getDeviceList")
 	ctx := context.Background()
 	login, err := client.Login(ctx, tplink.LoginRequest{
 		Email:    "user@example.com",
@@ -217,6 +223,7 @@ func TestLoginAndDeviceErrorReplayMappings(t *testing.T) {
 
 	t.Run("missing token stops before HTTP", func(t *testing.T) {
 		client, transport := newTestClient(t)
+		transport.expectCalls(0)
 
 		_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{})
 		require.Error(t, err)
@@ -226,7 +233,8 @@ func TestLoginAndDeviceErrorReplayMappings(t *testing.T) {
 }
 
 func TestClosedClientRejectsRequests(t *testing.T) {
-	client, _ := newTestClient(t)
+	client, transport := newTestClient(t)
+	transport.expectCalls(0)
 	require.NoError(t, client.Close())
 
 	_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
@@ -387,7 +395,8 @@ func TestPassthroughRequestReplay(t *testing.T) {
 }
 
 func TestPowerAndLightStateReplayResults(t *testing.T) {
-	client, _ := newTestClient(t)
+	client, transport := newTestClient(t)
+	transport.expectSequence("passthrough_system_get_sysinfo", "passthrough_lightingservice_get_light_state", "passthrough_lightingservice_get_light_state", "passthrough_lightingservice_get_light_state", "passthrough_lightingservice_get_light_state")
 	ctx := context.Background()
 	auth := tplink.AuthContext{AccessToken: "test-token"}
 
@@ -445,6 +454,7 @@ func TestMalformedAndHTTPFailureResponses(t *testing.T) {
 
 func TestPassthroughMissingCommandIsInvalidResponse(t *testing.T) {
 	client, transport := newTestClient(t)
+	transport.expectSequence("passthrough_system_set_relay_state", "passthrough_system_get_sysinfo")
 	transport.useResponse("passthrough_system_set_relay_state", http.StatusOK,
 		[]byte(`{"error_code":0,"result":{"responseData":"{\"system\":{}}"}}`))
 	transport.useResponse("passthrough_system_get_sysinfo", http.StatusOK,

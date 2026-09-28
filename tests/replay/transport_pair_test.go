@@ -72,6 +72,28 @@ func TestReplayFixtureRejectsRequestOutsidePair(t *testing.T) {
 	if _, err := io.ReadAll(response.Body); err != nil {
 		t.Fatal(err)
 	}
+	if err := transport.assertConsumed(); err != nil {
+		t.Fatal(err)
+	}
+	if response, err := transport.RoundTrip(request(replayBaseURL, "test-token")); err == nil || response != nil {
+		t.Fatalf("duplicate request returned response %v, error %v", response, err)
+	}
+}
+
+func TestReplayFixtureRequiresExpectedCallOrderAndExhaustion(t *testing.T) {
+	transport := newReplayTransport()
+	transport.expectSequence("login", "getDeviceList")
+	if err := transport.assertConsumed(); err == nil {
+		t.Fatal("unconsumed replay sequence was accepted")
+	}
+	request, err := http.NewRequest(http.MethodPost, replayBaseURL+"?token=test-token", strings.NewReader(`{"method":"getDeviceList"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	if response, err := transport.RoundTrip(request); err == nil || response != nil {
+		t.Fatalf("out-of-order request returned response %v, error %v", response, err)
+	}
 }
 
 func TestReplayOverrideStillMatchesRequest(t *testing.T) {

@@ -51,6 +51,9 @@ type replayTransport struct {
 	mu sync.Mutex
 
 	requests       []recordedRequest
+	expectedCalls  int
+	expectedOrder  []string
+	matchedCalls   int
 	fixtureRoutes  map[string]string
 	responseRoutes map[string]replayResponse
 	errorRoutes    map[string]error
@@ -58,6 +61,7 @@ type replayTransport struct {
 
 func newReplayTransport() *replayTransport {
 	return &replayTransport{
+		expectedCalls:  1,
 		fixtureRoutes:  make(map[string]string),
 		responseRoutes: make(map[string]replayResponse),
 		errorRoutes:    make(map[string]error),
@@ -107,6 +111,17 @@ func (transport *replayTransport) RoundTrip(request *http.Request) (*http.Respon
 	if err := matchFixtureRequest(request, requestBody, key, exchange); err != nil {
 		return nil, fmt.Errorf("replay fixture %q request mismatch: %w", fixturePath, err)
 	}
+	transport.mu.Lock()
+	if transport.matchedCalls >= transport.expectedCalls {
+		transport.mu.Unlock()
+		return nil, fmt.Errorf("unexpected extra replay request for operation %q", key)
+	}
+	if len(transport.expectedOrder) > 0 && transport.expectedOrder[transport.matchedCalls] != key {
+		transport.mu.Unlock()
+		return nil, fmt.Errorf("replay operation %q is out of order", key)
+	}
+	transport.matchedCalls++
+	transport.mu.Unlock()
 	if hasError {
 		return nil, responseError
 	}
@@ -118,6 +133,28 @@ func (transport *replayTransport) RoundTrip(request *http.Request) (*http.Respon
 		Header:     http.Header(exchange.Response.Headers),
 		Body:       io.NopCloser(bytes.NewReader(exchange.Response.Body)),
 	}, nil
+}
+
+func (transport *replayTransport) expectCalls(count int) {
+	transport.mu.Lock()
+	defer transport.mu.Unlock()
+	transport.expectedCalls = count
+}
+
+func (transport *replayTransport) expectSequence(operations ...string) {
+	transport.mu.Lock()
+	defer transport.mu.Unlock()
+	transport.expectedCalls = len(operations)
+	transport.expectedOrder = append([]string(nil), operations...)
+}
+
+func (transport *replayTransport) assertConsumed() error {
+	transport.mu.Lock()
+	defer transport.mu.Unlock()
+	if transport.matchedCalls != transport.expectedCalls {
+		return fmt.Errorf("matched %d of %d expected replay calls", transport.matchedCalls, transport.expectedCalls)
+	}
+	return nil
 }
 
 func matchFixtureRequest(request *http.Request, body []byte, operation string, exchange fixtureExchange) error {

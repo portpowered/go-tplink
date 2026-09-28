@@ -22,9 +22,11 @@ The synthetic HTTP fixtures now pair each response with a request envelope:
 method, origin, path, query token policy, relevant headers, permitted operation,
 and complete synthetic JSON request body variants. The replay transport rejects
 a request outside that envelope; Go replay tests also check request-specific
-values. The harness still permits default routing and does not assert the
-expected number and order of calls for every case, so library standard 15
-remains open.
+values. It validates override and transport-error requests before returning an
+outcome. The harness rejects extra calls, asserts the expected number of calls
+at test cleanup, and checks order in multi-request cases. The independent
+item-15 review must verify whether the default operation routing and opaque
+synthetic-token matcher are sufficiently constrained before sign-off.
 
 If a future live or instrumented capture is added, keep it separately under
 `tests/replay/fixtures/captured/`. Add a neighboring provenance note with the
