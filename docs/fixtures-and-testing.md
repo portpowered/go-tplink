@@ -6,13 +6,12 @@ encoding, response decoding, and typed errors.
 
 ## Fixture provenance
 
-The former backend wrapper contained JSON files under
-`portos-backend/integrations/go-tplink/test/fixtures/`. They used placeholder
-account and device identifiers and had no adjacent capture notes, collection
-date, source, or redaction record. Their origin cannot be verified. The
-migration classifies them as **synthetic**, not captured. They test expected
-wire shapes and error handling, but they do not establish that a live TP-Link
-service returned those bytes.
+The earlier client test suite contained JSON response files with placeholder
+account and device identifiers. They had no adjacent capture notes, collection
+date, source, or redaction record. Their origin cannot be verified, so they
+are classified as **synthetic**, not captured. They test expected wire shapes
+and error handling, but they do not establish that a live TP-Link service
+returned those bytes.
 
 Synthetic fixtures belong under
 `tests/replay/fixtures/synthetic/` and their names or neighboring notes should
@@ -48,7 +47,7 @@ removed after the check.
 
 There is no separate integration-test or live-test target: the module currently
 has no live-account test harness, and ordinary checks must remain independent
-of real accounts and devices. There is no dedicated docs-check target; review
-Markdown links and examples when documentation changes. A separate read-only
+of real accounts and devices. `make docs-check` builds the Markdown
+documentation site with strict link checking. A separate read-only
 device-list example requires user-provided credentials and is documented in
 the README; it is not part of CI.

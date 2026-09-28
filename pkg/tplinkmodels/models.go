@@ -1,10 +1,7 @@
 // Package tplinkmodels provides data models and error types for the TP-Link Cloud API client.
 //
-// WHY separate models package?
-// Integration libraries in Port OS split models into their own package so that
-// consumers (e.g. Port OS plugin code) can reference types and errors without
-// importing the full client. This avoids circular dependencies when the plugin
-// needs to type-check errors but doesn't need the HTTP client.
+// This package is separate from the client so callers can use provider models
+// and inspect typed errors without depending on HTTP client construction.
 package tplinkmodels
 
 // --- Cloud API envelope ---

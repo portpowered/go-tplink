@@ -1,15 +1,13 @@
 # TP-Link cloud protocol notes
 
-These notes describe the contract encoded by the former Port OS Go wrapper in
-`portos-backend/integrations/go-tplink` and carried into this standalone
-module. That wrapper is evidence of the behavior the backend depended on; it
-is not an official TP-Link protocol specification. The endpoint and command
-details below should be treated as source-observed and covered by synthetic
-tests, not as vendor-guaranteed behavior.
+These notes describe behavior encoded by the client implementation. They are
+not an official TP-Link protocol specification. The endpoint and command
+details below are implementation observations covered by synthetic tests,
+not vendor-guaranteed behavior.
 
 ## Cloud endpoint and envelope
 
-The legacy implementation sent HTTPS `POST` requests to a configured regional
+The client sends HTTPS `POST` requests to a configured regional
 base URL. The default was `https://use1-wap.tplinkcloud.com`; constants also
 named `https://eu-wap.tplinkcloud.com`,
 `https://aps1-wap.tplinkcloud.com`, and `https://wap.tplinkcloud.com`.
@@ -55,17 +53,16 @@ The library never needs the user's password after the login operation.
 
 ## Device listing
 
-The `getDeviceList` operation has no `params` in the legacy implementation.
+The `getDeviceList` operation has no `params` in the client implementation.
 The result wraps devices in `result.deviceList`. Device fields used by the
-backend include `deviceId`, `deviceType`, `alias`, `deviceModel`, `appServerUrl`,
-`status`, and lighting capability flags (`is_dimmable`, `is_color`, and
-`is_variable_color_temp`). The Go model preserves additional firmware and
-hardware fields.
+client include `deviceId`, `deviceType`, `alias`, `deviceModel`,
+`appServerUrl`, `status`, and lighting capability flags (`is_dimmable`,
+`is_color`, and `is_variable_color_temp`). The Go model preserves additional
+firmware and hardware fields.
 
-The existing adapter recognizes `IOT.SMARTPLUGSWITCH`,
-`IOT.RANGEEXTENDER.SMARTPLUG`, and `IOT.SMARTBULB`. It ignores unknown types
-when creating backend routes. The list itself is returned without type
-filtering.
+The model helpers recognize `IOT.SMARTPLUGSWITCH`,
+`IOT.RANGEEXTENDER.SMARTPLUG`, and `IOT.SMARTBULB`. Unknown types are
+classified as `Other`; the client returns the device list without filtering.
 
 ## Device passthrough
 
@@ -116,16 +113,15 @@ level or nested under a namespace and command. The current Go API keeps typed
 errors in `pkg/tplinkmodels`; see their source for exact exported fields and
 inspect with `errors.As` when handling them.
 
-The old wrapper parsed the response body but did not branch on HTTP status
-codes. That is a migration observation, not desired guidance for new transport
-code. The standalone client classifies HTTP and malformed-response failures
-explicitly. There is no documented retry, refresh, pagination, push/event,
+An earlier implementation parsed the response body without branching on HTTP
+status codes. The current client classifies HTTP and malformed-response
+failures explicitly. There is no documented retry, refresh, pagination, push/event,
 websocket, or long-lived-session protocol in the supported client surface.
 
 ## Protocol artifact status
 
-This document is a human-readable protocol note, not OpenAPI or vendor-issued
-schema. The former wrapper did not ship a formal vendor schema, and the
-inherited JSON fixtures have no verifiable capture provenance. They are
-maintained as synthetic test inputs; they are not evidence of a live exchange.
-See [fixture and verification notes](fixtures-and-testing.md).
+This document is a human-readable protocol note, not OpenAPI or a vendor-issued
+schema. No formal vendor schema is included with the client, and the checked-in
+JSON fixtures have no verifiable capture provenance. They are maintained as
+synthetic test inputs; they are not evidence of a live exchange. See
+[fixture and verification notes](fixtures-and-testing.md).

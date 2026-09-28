@@ -1,9 +1,9 @@
 # Synthetic TP-Link response fixtures
 
-These payloads were migrated from `portos-backend/integrations/go-tplink/test/fixtures`.
-That directory had no capture dates, source descriptions, redaction notes, or other
-provenance records. Their origin cannot be verified, so they are classified as
-synthetic here and do not establish observed TP-Link behavior.
+These payloads were carried over from an earlier client test suite. They had no
+capture dates, source descriptions, redaction notes, or other provenance
+records. Their origin cannot be verified, so they are classified as synthetic
+here and do not establish observed TP-Link behavior.
 
 The payloads support deterministic, offline replay tests for these response
 shapes and client behaviors:
