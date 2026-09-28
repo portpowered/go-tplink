@@ -45,6 +45,8 @@ func newTestClientWithDoer(t *testing.T, doer tplink.HTTPDoer) *tplink.Client {
 func TestLoginAndDeviceListReplay(t *testing.T) {
 	client, transport := newTestClient(t)
 	transport.expectSequence("login", "getDeviceList", "getDeviceList")
+	transport.expectToken(1, "account-one-token")
+	transport.expectToken(2, "account two+token&scope=devices")
 	ctx := context.Background()
 	login, err := client.Login(ctx, tplink.LoginRequest{
 		Email:    "user@example.com",
@@ -211,6 +213,7 @@ func TestLoginAndDeviceErrorReplayMappings(t *testing.T) {
 	t.Run("unsupported bulb operation", func(t *testing.T) {
 		client, transport := newTestClient(t)
 		transport.useFixture("passthrough_lightingservice_transition_light_state", "error_unsupported")
+		transport.expectVariant(0, 1)
 
 		err := client.SetBrightness(context.Background(), tplink.SetBrightnessRequest{
 			Auth:       tplink.AuthContext{AccessToken: "test-token"},
@@ -251,6 +254,7 @@ func TestPassthroughRequestReplay(t *testing.T) {
 		name       string
 		deviceID   string
 		command    string
+		variant    int
 		wantFields map[string]any
 		call       func(*tplink.Client) error
 	}{
@@ -265,6 +269,7 @@ func TestPassthroughRequestReplay(t *testing.T) {
 		},
 		{
 			name:       "turn off plug",
+			variant:    1,
 			deviceID:   "device-plug-001",
 			command:    "system.set_relay_state",
 			wantFields: map[string]any{"state": float64(0)},
@@ -301,6 +306,7 @@ func TestPassthroughRequestReplay(t *testing.T) {
 		},
 		{
 			name:       "set color temperature",
+			variant:    1,
 			deviceID:   "device-bulb-001",
 			command:    "smartlife.iot.smartbulb.lightingservice.transition_light_state",
 			wantFields: map[string]any{"color_temp": float64(4000)},
@@ -310,6 +316,7 @@ func TestPassthroughRequestReplay(t *testing.T) {
 		},
 		{
 			name:       "set color",
+			variant:    2,
 			deviceID:   "device-bulb-001",
 			command:    "smartlife.iot.smartbulb.lightingservice.transition_light_state",
 			wantFields: map[string]any{"hue": float64(240), "saturation": float64(80)},
@@ -319,6 +326,7 @@ func TestPassthroughRequestReplay(t *testing.T) {
 		},
 		{
 			name:       "set light state",
+			variant:    3,
 			deviceID:   "device-bulb-001",
 			command:    "smartlife.iot.smartbulb.lightingservice.transition_light_state",
 			wantFields: map[string]any{"on_off": float64(1), "brightness": float64(75), "hue": float64(120), "saturation": float64(50)},
@@ -380,6 +388,9 @@ func TestPassthroughRequestReplay(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			client, transport := newTestClient(t)
+			parts := strings.Split(test.command, ".")
+			transport.expectSequence("passthrough_" + parts[len(parts)-2] + "_" + parts[len(parts)-1])
+			transport.expectVariant(0, test.variant)
 			require.NoError(t, test.call(client))
 			request := onlyRecordedRequest(t, transport)
 			assert.Equal(t, "test-token", request.URL.Query().Get("token"))
@@ -483,9 +494,10 @@ func TestOversizedAndNilHTTPResponses(t *testing.T) {
 	})
 
 	t.Run("nil response", func(t *testing.T) {
-		client := newTestClientWithDoer(t, httpDoerFunc(func(*http.Request) (*http.Response, error) {
-			return nil, nil
-		}))
+		transport := newReplayTransport()
+		transport.useFault("fault-device-nil-response", nil, nil)
+		client := newTestClientWithDoer(t, httpDoerFunc(transport.RoundTrip))
+		t.Cleanup(func() { require.NoError(t, transport.assertConsumed()) })
 
 		_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
 			Auth: tplink.AuthContext{AccessToken: "test-token"},
@@ -495,9 +507,8 @@ func TestOversizedAndNilHTTPResponses(t *testing.T) {
 	})
 
 	t.Run("nil response body", func(t *testing.T) {
-		client := newTestClientWithDoer(t, httpDoerFunc(func(*http.Request) (*http.Response, error) {
-			return &http.Response{StatusCode: http.StatusOK}, nil
-		}))
+		client, transport := newTestClient(t)
+		transport.useFault("fault-device-nil-body", nil, nil)
 
 		_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
 			Auth: tplink.AuthContext{AccessToken: "test-token"},
@@ -512,6 +523,7 @@ func TestTransportErrorsDoNotLeakRequestTokens(t *testing.T) {
 	transportFailure := errors.New("connection refused")
 	transport.useError("getDeviceList", transportFailure)
 	token := "private token+&scope=devices"
+	transport.expectToken(0, token)
 
 	_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
 		Auth: tplink.AuthContext{AccessToken: token},

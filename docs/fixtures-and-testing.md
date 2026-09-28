@@ -19,14 +19,16 @@ keep that classification visible. Do not move these files into a `captured/`
 directory or describe them as sanitized live captures.
 
 The synthetic HTTP fixtures now pair each response with a request envelope:
-method, origin, path, query token policy, relevant headers, permitted operation,
-and complete synthetic JSON request body variants. The replay transport rejects
-a request outside that envelope; Go replay tests also check request-specific
-values. It validates override and transport-error requests before returning an
-outcome. The harness rejects extra calls, asserts the expected number of calls
-at test cleanup, and checks order in multi-request cases. The independent
-item-15 review must verify whether the default operation routing and opaque
-synthetic-token matcher are sufficiently constrained before sign-off.
+method, origin, path, exact synthetic query token, relevant headers, operation,
+and complete synthetic JSON request body variants. Tests select one request
+variant for each expected step. The transport rejects a request outside that
+pair before returning its response. Failure outcomes, including nil and broken
+HTTP responses, have stored request and response halves in
+`paired_outcomes.synthetic.json`. Tests must declare the expected sequence;
+repeated operations require repeated steps. They reject extra calls and assert
+that every declared step was consumed. The public-method inventory fails when
+a client operation has no paired fixture. An independent item-15 review must
+recheck this implementation at the final commit before sign-off.
 
 If a future live or instrumented capture is added, keep it separately under
 `tests/replay/fixtures/captured/`. Add a neighboring provenance note with the

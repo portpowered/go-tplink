@@ -1,4 +1,4 @@
-# Synthetic TP-Link response fixtures
+# Synthetic TP-Link request and response fixtures
 
 These payloads were carried over from an earlier client test suite. They had no
 capture dates, source descriptions, redaction notes, or other provenance
@@ -26,8 +26,15 @@ shapes and client behaviors:
 | `passthrough_system_set_dev_alias` | Successful alias update |
 | `passthrough_system_set_relay_state` | Successful plug state update |
 
-They contain placeholder account, device, and token values. Do not use them as
-credentials or as evidence of live service behavior.
+Each normal fixture stores its outbound request and inbound response. Tests
+select one request-body variant per ordered replay step, and each step may be
+consumed once. `paired_outcomes.synthetic.json` stores paired request and
+response halves for failure and transport-fault cases. Synthetic tokens are
+matched exactly, including the `test-token` default and explicit per-test
+overrides.
+
+These fixtures contain placeholder account, device, and token values. Do not
+use them as credentials or as evidence of live service behavior.
 
 To add a real capture, keep it in `../captured/` and include a neighboring
 provenance note recording the operation, UTC capture date, source category,

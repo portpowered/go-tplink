@@ -23,25 +23,40 @@ type recordedRequest struct {
 	Body   []byte
 }
 
-type replayResponse struct {
-	status int
-	body   []byte
+type fixtureRequest struct {
+	Method     string              `json:"method"`
+	Origin     string              `json:"origin"`
+	Path       string              `json:"path"`
+	Query      map[string][]string `json:"query"`
+	Headers    map[string][]string `json:"headers"`
+	Operations []string            `json:"operations"`
+	Bodies     []json.RawMessage   `json:"bodies"`
 }
 
 type fixtureExchange struct {
-	Request struct {
-		Method     string              `json:"method"`
-		Origin     string              `json:"origin"`
-		Path       string              `json:"path"`
-		Query      map[string][]string `json:"query"`
-		Headers    map[string][]string `json:"headers"`
-		Operations []string            `json:"operations"`
-		Bodies     []json.RawMessage   `json:"bodies"`
-	} `json:"request"`
+	Request  fixtureRequest `json:"request"`
 	Response struct {
 		Status  int                 `json:"status"`
 		Headers map[string][]string `json:"headers"`
 		Body    json.RawMessage     `json:"body"`
+	} `json:"response"`
+}
+
+type storedOutcome struct {
+	ID        string         `json:"id"`
+	Operation string         `json:"operation"`
+	Request   fixtureRequest `json:"request"`
+	Response  struct {
+		Status     int                 `json:"status"`
+		Headers    map[string][]string `json:"headers"`
+		BodyText   string              `json:"body_text,omitempty"`
+		BodyRepeat *struct {
+			Text  string `json:"text"`
+			Count int    `json:"count"`
+		} `json:"body_repeat,omitempty"`
+		TransportError string `json:"transport_error,omitempty"`
+		Fault          string `json:"fault,omitempty"`
+		ErrorURL       string `json:"error_url,omitempty"`
 	} `json:"response"`
 }
 
@@ -50,22 +65,23 @@ type fixtureExchange struct {
 type replayTransport struct {
 	mu sync.Mutex
 
-	requests       []recordedRequest
-	expectedCalls  int
-	expectedOrder  []string
-	matchedCalls   int
-	fixtureRoutes  map[string]string
-	responseRoutes map[string]replayResponse
-	errorRoutes    map[string]error
+	requests     []recordedRequest
+	steps        []replayStep
+	matchedCalls int
+}
+
+type replayStep struct {
+	operation      string
+	fixture        string
+	token          string
+	variant        int
+	outcome        *storedOutcome
+	transportError error
+	faultBody      io.ReadCloser
 }
 
 func newReplayTransport() *replayTransport {
-	return &replayTransport{
-		expectedCalls:  1,
-		fixtureRoutes:  make(map[string]string),
-		responseRoutes: make(map[string]replayResponse),
-		errorRoutes:    make(map[string]error),
-	}
+	return &replayTransport{}
 }
 
 func (transport *replayTransport) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -90,43 +106,80 @@ func (transport *replayTransport) RoundTrip(request *http.Request) (*http.Respon
 		Header: request.Header.Clone(),
 		Body:   append([]byte(nil), requestBody...),
 	})
-	responseOverride, hasOverride := transport.responseRoutes[key]
-	responseError, hasError := transport.errorRoutes[key]
-	fixtureStem, hasFixtureRoute := transport.fixtureRoutes[key]
-	transport.mu.Unlock()
-
-	if !hasFixtureRoute {
-		fixtureStem = key
+	if transport.matchedCalls >= len(transport.steps) {
+		transport.mu.Unlock()
+		return nil, fmt.Errorf("unexpected extra replay request for operation %q", key)
 	}
-
-	fixturePath := "fixtures/synthetic/synthetic_tplink_" + fixtureStem + ".json"
-	fixtureBody, err := fixtureFiles.ReadFile(fixturePath)
-	if err != nil {
-		return nil, fmt.Errorf("no replay response for TP-Link operation %q: %w", key, err)
+	stepIndex := transport.matchedCalls
+	step := transport.steps[stepIndex]
+	transport.mu.Unlock()
+	if step.operation != key {
+		return nil, fmt.Errorf("replay operation %q is out of order; expected %q", key, step.operation)
 	}
 	var exchange fixtureExchange
-	if err := json.Unmarshal(fixtureBody, &exchange); err != nil {
-		return nil, fmt.Errorf("decode replay fixture %q: %w", fixturePath, err)
+	fixturePath := step.fixture
+	if step.outcome != nil {
+		fixturePath = "paired_outcomes.synthetic.json#" + step.outcome.ID
+		exchange.Request = step.outcome.Request
+	} else {
+		if fixturePath == "" {
+			fixturePath = step.operation
+		}
+		fixturePath = "fixtures/synthetic/synthetic_tplink_" + fixturePath + ".json"
+		fixtureBody, err := fixtureFiles.ReadFile(fixturePath)
+		if err != nil {
+			return nil, fmt.Errorf("no replay pair for TP-Link operation %q: %w", key, err)
+		}
+		if err := json.Unmarshal(fixtureBody, &exchange); err != nil {
+			return nil, fmt.Errorf("decode replay fixture %q: %w", fixturePath, err)
+		}
 	}
+	if step.token != "" {
+		exchange.Request.Query["token"] = []string{step.token}
+	}
+	if step.variant < 0 || step.variant >= len(exchange.Request.Bodies) {
+		return nil, fmt.Errorf("fixture %q has no request variant %d", fixturePath, step.variant)
+	}
+	exchange.Request.Bodies = exchange.Request.Bodies[step.variant : step.variant+1]
+	exchange.Request.Operations = []string{step.operation}
 	if err := matchFixtureRequest(request, requestBody, key, exchange); err != nil {
 		return nil, fmt.Errorf("replay fixture %q request mismatch: %w", fixturePath, err)
 	}
 	transport.mu.Lock()
-	if transport.matchedCalls >= transport.expectedCalls {
+	if transport.matchedCalls != stepIndex {
 		transport.mu.Unlock()
-		return nil, fmt.Errorf("unexpected extra replay request for operation %q", key)
-	}
-	if len(transport.expectedOrder) > 0 && transport.expectedOrder[transport.matchedCalls] != key {
-		transport.mu.Unlock()
-		return nil, fmt.Errorf("replay operation %q is out of order", key)
+		return nil, fmt.Errorf("duplicate or out-of-order concurrent replay request for operation %q", key)
 	}
 	transport.matchedCalls++
 	transport.mu.Unlock()
-	if hasError {
-		return nil, responseError
+	if step.outcome != nil {
+		switch step.outcome.Response.Fault {
+		case "nil-response":
+			return nil, nil
+		case "nil-body":
+			return &http.Response{StatusCode: step.outcome.Response.Status}, nil
+		case "read-error":
+			return &http.Response{StatusCode: step.outcome.Response.Status, Body: readErrorBody{}}, nil
+		case "response-and-error":
+			return &http.Response{StatusCode: step.outcome.Response.Status, Body: step.faultBody}, step.transportError
+		case "transport-error":
+			return nil, step.transportError
+		case "url-error":
+			return nil, &url.Error{Op: "Post", URL: step.outcome.Response.ErrorURL, Err: step.transportError}
+		case "":
+		default:
+			return nil, fmt.Errorf("unknown replay fault %q", step.outcome.Response.Fault)
+		}
 	}
-	if hasOverride {
-		return jsonResponse(responseOverride.status, responseOverride.body), nil
+	if step.outcome != nil && step.outcome.Response.TransportError != "" {
+		return nil, step.transportError
+	}
+	if step.outcome != nil {
+		body := []byte(step.outcome.Response.BodyText)
+		if repeat := step.outcome.Response.BodyRepeat; repeat != nil {
+			body = []byte(strings.Repeat(repeat.Text, repeat.Count))
+		}
+		return &http.Response{StatusCode: step.outcome.Response.Status, Header: http.Header(step.outcome.Response.Headers), Body: io.NopCloser(bytes.NewReader(body))}, nil
 	}
 	return &http.Response{
 		StatusCode: exchange.Response.Status,
@@ -138,21 +191,38 @@ func (transport *replayTransport) RoundTrip(request *http.Request) (*http.Respon
 func (transport *replayTransport) expectCalls(count int) {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
-	transport.expectedCalls = count
+	if count != 0 {
+		panic("use expectSequence for positive expected call counts")
+	}
+	transport.steps = nil
 }
 
 func (transport *replayTransport) expectSequence(operations ...string) {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
-	transport.expectedCalls = len(operations)
-	transport.expectedOrder = append([]string(nil), operations...)
+	transport.steps = make([]replayStep, len(operations))
+	for i, operation := range operations {
+		transport.steps[i].operation = operation
+	}
+}
+
+func (transport *replayTransport) expectToken(index int, token string) {
+	transport.mu.Lock()
+	defer transport.mu.Unlock()
+	transport.steps[index].token = token
+}
+
+func (transport *replayTransport) expectVariant(index, variant int) {
+	transport.mu.Lock()
+	defer transport.mu.Unlock()
+	transport.steps[index].variant = variant
 }
 
 func (transport *replayTransport) assertConsumed() error {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
-	if transport.matchedCalls != transport.expectedCalls {
-		return fmt.Errorf("matched %d of %d expected replay calls", transport.matchedCalls, transport.expectedCalls)
+	if transport.matchedCalls != len(transport.steps) {
+		return fmt.Errorf("matched %d of %d expected replay calls", transport.matchedCalls, len(transport.steps))
 	}
 	return nil
 }
@@ -172,9 +242,6 @@ func matchFixtureRequest(request *http.Request, body []byte, operation string, e
 			return fmt.Errorf("query %s = %v, want %v", name, got, values)
 		}
 		for i, value := range values {
-			if value == "<nonempty>" && got[i] != "" {
-				continue
-			}
 			if got[i] != value {
 				return fmt.Errorf("query %s[%d] = %q, want %q", name, i, got[i], value)
 			}
@@ -220,28 +287,89 @@ func matchFixtureRequest(request *http.Request, body []byte, operation string, e
 func (transport *replayTransport) useFixture(operationKey, fixtureStem string) {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
-	transport.fixtureRoutes[operationKey] = fixtureStem
-	delete(transport.responseRoutes, operationKey)
-	delete(transport.errorRoutes, operationKey)
+	transport.configureStep(operationKey, func(step *replayStep) { step.fixture = fixtureStem })
 }
 
 func (transport *replayTransport) useResponse(operationKey string, status int, body []byte) {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
-	transport.responseRoutes[operationKey] = replayResponse{
-		status: status,
-		body:   append([]byte(nil), body...),
-	}
-	delete(transport.fixtureRoutes, operationKey)
-	delete(transport.errorRoutes, operationKey)
+	outcome := findStoredOutcome(operationKey, status, body, "")
+	transport.configureStep(operationKey, func(step *replayStep) { step.outcome = &outcome })
 }
 
 func (transport *replayTransport) useError(operationKey string, err error) {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
-	transport.errorRoutes[operationKey] = err
-	delete(transport.fixtureRoutes, operationKey)
-	delete(transport.responseRoutes, operationKey)
+	outcome := findStoredOutcome(operationKey, 0, nil, err.Error())
+	transport.configureStep(operationKey, func(step *replayStep) { step.outcome = &outcome; step.transportError = err })
+}
+
+func (transport *replayTransport) useFault(id string, cause error, body io.ReadCloser) {
+	data, err := fixtureFiles.ReadFile("fixtures/synthetic/paired_outcomes.synthetic.json")
+	if err != nil {
+		panic(err)
+	}
+	var outcomes []storedOutcome
+	if err := json.Unmarshal(data, &outcomes); err != nil {
+		panic(err)
+	}
+	for _, outcome := range outcomes {
+		if outcome.ID != id {
+			continue
+		}
+		if outcome.Response.Fault == "" {
+			panic("stored outcome is not a fault: " + id)
+		}
+		if cause == nil && outcome.Response.TransportError != "" || cause != nil && cause.Error() != outcome.Response.TransportError {
+			panic("fault cause differs from stored outcome: " + id)
+		}
+		if (body != nil) != (outcome.Response.Fault == "response-and-error") {
+			panic("fault body differs from stored outcome: " + id)
+		}
+		transport.mu.Lock()
+		transport.configureStep(outcome.Operation, func(step *replayStep) { step.outcome = &outcome; step.transportError = cause; step.faultBody = body })
+		transport.mu.Unlock()
+		return
+	}
+	panic("missing stored fault outcome: " + id)
+}
+
+func findStoredOutcome(operation string, status int, body []byte, transportError string) storedOutcome {
+	data, err := fixtureFiles.ReadFile("fixtures/synthetic/paired_outcomes.synthetic.json")
+	if err != nil {
+		panic(err)
+	}
+	var outcomes []storedOutcome
+	if err := json.Unmarshal(data, &outcomes); err != nil {
+		panic(err)
+	}
+	for _, outcome := range outcomes {
+		if outcome.Operation != operation {
+			continue
+		}
+		if transportError != "" && outcome.Response.TransportError == transportError {
+			return outcome
+		}
+		storedBody := []byte(outcome.Response.BodyText)
+		if repeat := outcome.Response.BodyRepeat; repeat != nil {
+			storedBody = []byte(strings.Repeat(repeat.Text, repeat.Count))
+		}
+		if transportError == "" && outcome.Response.TransportError == "" && outcome.Response.Status == status && bytes.Equal(storedBody, body) {
+			return outcome
+		}
+	}
+	panic(fmt.Sprintf("no stored paired outcome for %s status %d", operation, status))
+}
+
+func (transport *replayTransport) configureStep(operation string, configure func(*replayStep)) {
+	if len(transport.steps) == 0 {
+		transport.steps = []replayStep{{operation: operation}}
+	}
+	for i := range transport.steps {
+		if transport.steps[i].operation == operation {
+			configure(&transport.steps[i])
+		}
+	}
 }
 
 func (transport *replayTransport) recordedRequests() []recordedRequest {

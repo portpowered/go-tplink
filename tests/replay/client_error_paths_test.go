@@ -280,6 +280,9 @@ func TestPassthroughReplayErrorResponses(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			client, transport := newTestClient(t)
 			transport.useResponse(test.operationKey, http.StatusOK, passthroughReplayBody(t, test.responseData))
+			if test.name == "command reports device error" || test.name == "command reports unsupported operation" || test.name == "command result has wrong shape" {
+				transport.expectVariant(0, 1)
+			}
 			err := test.call(client)
 			require.Error(t, err)
 			assert.True(t, test.want(err), "got %T: %v", err, err)
@@ -356,6 +359,7 @@ func TestLightSetterMarshalAndNetworkErrors(t *testing.T) {
 	assert.Empty(t, transport.recordedRequests())
 
 	transport.useError("passthrough_lightingservice_transition_light_state", errors.New("synthetic network failure"))
+	transport.expectVariant(0, 4)
 	err = client.SetColorTemp(context.Background(), tplink.SetColorTempRequest{
 		Auth: tplink.AuthContext{AccessToken: "test-token"}, DeviceID: "device-bulb-001", ColorTemp: 3000,
 	})
@@ -397,10 +401,14 @@ func TestPlugAndAliasMethodsPropagateCloudErrors(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			client, transport := newTestClient(t)
-			transport.useResponse("passthrough_system_set_relay_state", http.StatusOK,
-				[]byte(`{"error_code":-99999,"msg":"synthetic failure"}`))
-			transport.useResponse("passthrough_system_set_dev_alias", http.StatusOK,
-				[]byte(`{"error_code":-99999,"msg":"synthetic failure"}`))
+			operation := "passthrough_system_set_relay_state"
+			if test.name == "set alias" {
+				operation = "passthrough_system_set_dev_alias"
+			}
+			transport.useResponse(operation, http.StatusOK, []byte(`{"error_code":-99999,"msg":"synthetic failure"}`))
+			if test.name == "turn off" || test.name == "set alias" {
+				transport.expectVariant(0, 1)
+			}
 			err := test.call(client)
 			require.Error(t, err)
 			assert.True(t, tplinkmodels.IsCloudAPIError(err))
@@ -411,9 +419,12 @@ func TestPlugAndAliasMethodsPropagateCloudErrors(t *testing.T) {
 func TestHTTPBodyReadAndCloseFailures(t *testing.T) {
 	t.Run("transport returns response and error", func(t *testing.T) {
 		body := &closeTrackingBody{reader: strings.NewReader("unused")}
-		client := newTestClientWithDoer(t, httpDoerFunc(func(*http.Request) (*http.Response, error) {
-			return &http.Response{StatusCode: http.StatusOK, Body: body}, errors.New("synthetic transport failure")
+		transport := newReplayTransport()
+		transport.useFault("fault-device-response-and-error", errors.New("synthetic transport failure"), body)
+		client := newTestClientWithDoer(t, httpDoerFunc(func(request *http.Request) (*http.Response, error) {
+			return transport.RoundTrip(request)
 		}))
+		t.Cleanup(func() { require.NoError(t, transport.assertConsumed()) })
 
 		_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
 			Auth: tplink.AuthContext{AccessToken: "test-token"},
@@ -424,9 +435,8 @@ func TestHTTPBodyReadAndCloseFailures(t *testing.T) {
 	})
 
 	t.Run("response body read fails", func(t *testing.T) {
-		client := newTestClientWithDoer(t, httpDoerFunc(func(*http.Request) (*http.Response, error) {
-			return &http.Response{StatusCode: http.StatusOK, Body: readErrorBody{}}, nil
-		}))
+		client, transport := newTestClient(t)
+		transport.useFault("fault-device-read-error", nil, nil)
 
 		_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
 			Auth: tplink.AuthContext{AccessToken: "test-token"},
@@ -437,9 +447,8 @@ func TestHTTPBodyReadAndCloseFailures(t *testing.T) {
 
 	t.Run("non URL transport error is preserved", func(t *testing.T) {
 		cause := errors.New("synthetic direct transport failure")
-		client := newTestClientWithDoer(t, httpDoerFunc(func(*http.Request) (*http.Response, error) {
-			return nil, cause
-		}))
+		client, transport := newTestClient(t)
+		transport.useFault("fault-login-direct-error", cause, nil)
 
 		_, err := client.Login(context.Background(), tplink.LoginRequest{
 			Email: "user@example.com", Password: "placeholder-password",
@@ -465,9 +474,14 @@ func TestHTTPBodyReadAndCloseFailures(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			client := newTestClientWithDoer(t, httpDoerFunc(func(*http.Request) (*http.Response, error) {
-				return nil, &url.Error{Op: "Post", URL: test.transportURL, Err: errors.New("synthetic transport failure")}
-			}))
+			transport := newReplayTransport()
+			faultID := "fault-login-url-malformed"
+			if strings.Contains(test.transportURL, "?") {
+				faultID = "fault-login-url-query"
+			}
+			transport.useFault(faultID, errors.New("synthetic transport failure"), nil)
+			client := newTestClientWithDoer(t, httpDoerFunc(transport.RoundTrip))
+			t.Cleanup(func() { require.NoError(t, transport.assertConsumed()) })
 
 			_, err := client.Login(context.Background(), tplink.LoginRequest{
 				Email: "user@example.com", Password: "placeholder-password",

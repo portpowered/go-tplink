@@ -1,0 +1,1299 @@
+[
+  {
+    "id": "login-9ca7f07499",
+    "operation": "login",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {},
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "login"
+      ],
+      "bodies": [
+        {
+          "method": "login",
+          "params": {
+            "appType": "Tapo_Android",
+            "cloudPassword": "placeholder-password",
+            "cloudUserName": "user@example.com",
+            "terminalUUID": "go-tplink-client"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":0,\"result\":[]}"
+    }
+  },
+  {
+    "id": "getDeviceList-2b1348be1d",
+    "operation": "getDeviceList",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "getDeviceList"
+      ],
+      "bodies": [
+        {
+          "method": "getDeviceList"
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":0,\"result\":[]}"
+    }
+  },
+  {
+    "id": "passthrough_system_reboot-98f37a5a8c",
+    "operation": "passthrough_system_reboot",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_system_reboot"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"reboot\":{\"delay\":1}}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":0,\"result\":[]}"
+    }
+  },
+  {
+    "id": "passthrough_system_get_sysinfo-f182140230",
+    "operation": "passthrough_system_get_sysinfo",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_system_get_sysinfo"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"get_sysinfo\":\"\"}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":0,\"result\":{\"responseData\":\"{\\\"err_code\\\":5,\\\"err_msg\\\":\\\"device refused request\\\"}\"}}"
+    }
+  },
+  {
+    "id": "passthrough_system_get_sysinfo-17190fb011",
+    "operation": "passthrough_system_get_sysinfo",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_system_get_sysinfo"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"get_sysinfo\":\"\"}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":0,\"result\":{\"responseData\":\"[]\"}}"
+    }
+  },
+  {
+    "id": "passthrough_system_get_sysinfo-78b6c055be",
+    "operation": "passthrough_system_get_sysinfo",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_system_get_sysinfo"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"get_sysinfo\":\"\"}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":0,\"result\":{\"responseData\":\"{\\\"system\\\":{\\\"get_sysinfo\\\":[]}}\"}}"
+    }
+  },
+  {
+    "id": "passthrough_system_get_sysinfo-60a6c13686",
+    "operation": "passthrough_system_get_sysinfo",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_system_get_sysinfo"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"get_sysinfo\":\"\"}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":0,\"result\":{\"responseData\":\"{\\\"system\\\":{\\\"get_sysinfo\\\":{\\\"err_code\\\":5}}}\"}}"
+    }
+  },
+  {
+    "id": "passthrough_lightingservice_get_light_state-4951f256da",
+    "operation": "passthrough_lightingservice_get_light_state",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_lightingservice_get_light_state"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-bulb-001",
+            "requestData": "{\"smartlife.iot.smartbulb.lightingservice\":{\"get_light_state\":\"\"}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":0,\"result\":{\"responseData\":\"{\\\"smartlife.iot.smartbulb.lightingservice\\\":{\\\"get_light_state\\\":[]}}\"}}"
+    }
+  },
+  {
+    "id": "passthrough_lightingservice_get_light_state-62a91cc894",
+    "operation": "passthrough_lightingservice_get_light_state",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_lightingservice_get_light_state"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-bulb-001",
+            "requestData": "{\"smartlife.iot.smartbulb.lightingservice\":{\"get_light_state\":\"\"}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":0,\"result\":{\"responseData\":\"{\\\"smartlife.iot.smartbulb.lightingservice\\\":{\\\"get_light_state\\\":{\\\"err_code\\\":5}}}\"}}"
+    }
+  },
+  {
+    "id": "passthrough_system_set_dev_alias-3d8cdb61ce",
+    "operation": "passthrough_system_set_dev_alias",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_system_set_dev_alias"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"set_dev_alias\":{\"alias\":\"New Name\"}}}"
+          }
+        },
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"set_dev_alias\":{\"alias\":\"New name\"}}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":0,\"result\":{\"responseData\":\"{\\\"system\\\":{\\\"set_dev_alias\\\":{\\\"err_code\\\":5,\\\"err_msg\\\":\\\"alias rejected\\\"}}}\"}}"
+    }
+  },
+  {
+    "id": "passthrough_system_set_relay_state-88ddf33e4c",
+    "operation": "passthrough_system_set_relay_state",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_system_set_relay_state"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"set_relay_state\":{\"state\":1}}}"
+          }
+        },
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"set_relay_state\":{\"state\":0}}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":0,\"result\":{\"responseData\":\"{\\\"system\\\":{\\\"set_relay_state\\\":{\\\"err_code\\\":-1,\\\"err_msg\\\":\\\"unsupported\\\"}}}\"}}"
+    }
+  },
+  {
+    "id": "passthrough_system_set_dev_alias-862c44f90c",
+    "operation": "passthrough_system_set_dev_alias",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_system_set_dev_alias"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"set_dev_alias\":{\"alias\":\"New Name\"}}}"
+          }
+        },
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"set_dev_alias\":{\"alias\":\"New name\"}}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":0,\"result\":{\"responseData\":\"{\\\"system\\\":{\\\"set_dev_alias\\\":[]}}\"}}"
+    }
+  },
+  {
+    "id": "passthrough_lightingservice_get_light_state-d630b8be51",
+    "operation": "passthrough_lightingservice_get_light_state",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_lightingservice_get_light_state"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-bulb-001",
+            "requestData": "{\"smartlife.iot.smartbulb.lightingservice\":{\"get_light_state\":\"\"}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":0,\"result\":{\"responseData\":\"{\\\"system\\\":{}}\"}}"
+    }
+  },
+  {
+    "id": "passthrough_system_get_sysinfo-bf1952cae5",
+    "operation": "passthrough_system_get_sysinfo",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_system_get_sysinfo"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"get_sysinfo\":\"\"}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":-99999,\"msg\":\"synthetic failure\"}"
+    }
+  },
+  {
+    "id": "passthrough_lightingservice_get_light_state-78be55c6f4",
+    "operation": "passthrough_lightingservice_get_light_state",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_lightingservice_get_light_state"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-bulb-001",
+            "requestData": "{\"smartlife.iot.smartbulb.lightingservice\":{\"get_light_state\":\"\"}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":-99999,\"msg\":\"synthetic failure\"}"
+    }
+  },
+  {
+    "id": "passthrough_lightingservice_transition_light_state-d0eaeccfbb",
+    "operation": "passthrough_lightingservice_transition_light_state",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_lightingservice_transition_light_state"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-bulb-001",
+            "requestData": "{\"smartlife.iot.smartbulb.lightingservice\":{\"transition_light_state\":{\"brightness\":50}}}"
+          }
+        },
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-bulb-001",
+            "requestData": "{\"smartlife.iot.smartbulb.lightingservice\":{\"transition_light_state\":{\"color_temp\":4000}}}"
+          }
+        },
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-bulb-001",
+            "requestData": "{\"smartlife.iot.smartbulb.lightingservice\":{\"transition_light_state\":{\"hue\":240,\"saturation\":80}}}"
+          }
+        },
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-bulb-001",
+            "requestData": "{\"smartlife.iot.smartbulb.lightingservice\":{\"transition_light_state\":{\"brightness\":75,\"hue\":120,\"on_off\":1,\"saturation\":50}}}"
+          }
+        },
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-bulb-001",
+            "requestData": "{\"smartlife.iot.smartbulb.lightingservice\":{\"transition_light_state\":{\"color_temp\":3000}}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "transport_error": "synthetic network failure"
+    }
+  },
+  {
+    "id": "passthrough_system_set_relay_state-57cdc4d612",
+    "operation": "passthrough_system_set_relay_state",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_system_set_relay_state"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"set_relay_state\":{\"state\":1}}}"
+          }
+        },
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"set_relay_state\":{\"state\":0}}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":-99999,\"msg\":\"synthetic failure\"}"
+    }
+  },
+  {
+    "id": "passthrough_system_set_dev_alias-07e6d98640",
+    "operation": "passthrough_system_set_dev_alias",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_system_set_dev_alias"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"set_dev_alias\":{\"alias\":\"New Name\"}}}"
+          }
+        },
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"set_dev_alias\":{\"alias\":\"New name\"}}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":-99999,\"msg\":\"synthetic failure\"}"
+    }
+  },
+  {
+    "id": "getDeviceList-1fbf240c25",
+    "operation": "getDeviceList",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "getDeviceList"
+      ],
+      "bodies": [
+        {
+          "method": "getDeviceList"
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":-99999,\"msg\":\"Unknown error\"}"
+    }
+  },
+  {
+    "id": "getDeviceList-b41883825b",
+    "operation": "getDeviceList",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "getDeviceList"
+      ],
+      "bodies": [
+        {
+          "method": "getDeviceList"
+        }
+      ]
+    },
+    "response": {
+      "status": 500,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error\":\"failed\"}"
+    }
+  },
+  {
+    "id": "getDeviceList-eb3918cb5b",
+    "operation": "getDeviceList",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "getDeviceList"
+      ],
+      "bodies": [
+        {
+          "method": "getDeviceList"
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":"
+    }
+  },
+  {
+    "id": "passthrough_system_set_relay_state-8aa7627aa0",
+    "operation": "passthrough_system_set_relay_state",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_system_set_relay_state"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"set_relay_state\":{\"state\":1}}}"
+          }
+        },
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"set_relay_state\":{\"state\":0}}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":0,\"result\":{\"responseData\":\"{\\\"system\\\":{}}\"}}"
+    }
+  },
+  {
+    "id": "passthrough_system_get_sysinfo-8ac5f1f07f",
+    "operation": "passthrough_system_get_sysinfo",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "passthrough_system_get_sysinfo"
+      ],
+      "bodies": [
+        {
+          "method": "passthrough",
+          "params": {
+            "deviceId": "device-plug-001",
+            "requestData": "{\"system\":{\"get_sysinfo\":\"\"}}"
+          }
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":0,\"result\":{\"responseData\":\"{\\\"system\\\":{}}\"}}"
+    }
+  },
+  {
+    "id": "getDeviceList-23d25c7517",
+    "operation": "getDeviceList",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "getDeviceList"
+      ],
+      "bodies": [
+        {
+          "method": "getDeviceList"
+        }
+      ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_repeat": {
+        "text": " ",
+        "count": 1048577
+      }
+    }
+  },
+  {
+    "id": "getDeviceList-93e6954471",
+    "operation": "getDeviceList",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "getDeviceList"
+      ],
+      "bodies": [
+        {
+          "method": "getDeviceList"
+        }
+      ]
+    },
+    "response": {
+      "transport_error": "connection refused"
+    }
+  },
+  {
+    "id": "getDeviceList-df88ef627d",
+    "operation": "getDeviceList",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "getDeviceList"
+      ],
+      "bodies": [
+        {
+          "method": "getDeviceList"
+        }
+      ]
+    },
+    "response": {
+      "status": 429,
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body_text": "{\"error_code\":-20004}"
+    }
+  },
+  {
+    "id": "fault-device-nil-response",
+    "operation": "getDeviceList",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "getDeviceList"
+      ],
+      "bodies": [
+        {
+          "method": "getDeviceList"
+        }
+      ]
+    },
+    "response": {
+      "fault": "nil-response"
+    }
+  },
+  {
+    "id": "fault-device-nil-body",
+    "operation": "getDeviceList",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "getDeviceList"
+      ],
+      "bodies": [
+        {
+          "method": "getDeviceList"
+        }
+      ]
+    },
+    "response": {
+      "fault": "nil-body",
+      "status": 200
+    }
+  },
+  {
+    "id": "fault-device-read-error",
+    "operation": "getDeviceList",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "getDeviceList"
+      ],
+      "bodies": [
+        {
+          "method": "getDeviceList"
+        }
+      ]
+    },
+    "response": {
+      "fault": "read-error",
+      "status": 200
+    }
+  },
+  {
+    "id": "fault-device-response-and-error",
+    "operation": "getDeviceList",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {
+        "token": [
+          "test-token"
+        ]
+      },
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "getDeviceList"
+      ],
+      "bodies": [
+        {
+          "method": "getDeviceList"
+        }
+      ]
+    },
+    "response": {
+      "fault": "response-and-error",
+      "status": 200,
+      "transport_error": "synthetic transport failure",
+      "body_text": "unused"
+    }
+  },
+  {
+    "id": "fault-login-direct-error",
+    "operation": "login",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {},
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "login"
+      ],
+      "bodies": [
+        {
+          "method": "login",
+          "params": {
+            "appType": "Tapo_Android",
+            "cloudPassword": "placeholder-password",
+            "cloudUserName": "user@example.com",
+            "terminalUUID": "go-tplink-client"
+          }
+        }
+      ]
+    },
+    "response": {
+      "fault": "transport-error",
+      "transport_error": "synthetic direct transport failure"
+    }
+  },
+  {
+    "id": "fault-login-url-query",
+    "operation": "login",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {},
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "login"
+      ],
+      "bodies": [
+        {
+          "method": "login",
+          "params": {
+            "appType": "Tapo_Android",
+            "cloudPassword": "placeholder-password",
+            "cloudUserName": "user@example.com",
+            "terminalUUID": "go-tplink-client"
+          }
+        }
+      ]
+    },
+    "response": {
+      "fault": "url-error",
+      "error_url": "https://bad host/path?token=secret&scope=devices",
+      "transport_error": "synthetic transport failure"
+    }
+  },
+  {
+    "id": "fault-login-url-malformed",
+    "operation": "login",
+    "request": {
+      "method": "POST",
+      "origin": "https://wap.tplinkcloud.com",
+      "path": "",
+      "query": {},
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "operations": [
+        "login"
+      ],
+      "bodies": [
+        {
+          "method": "login",
+          "params": {
+            "appType": "Tapo_Android",
+            "cloudPassword": "placeholder-password",
+            "cloudUserName": "user@example.com",
+            "terminalUUID": "go-tplink-client"
+          }
+        }
+      ]
+    },
+    "response": {
+      "fault": "url-error",
+      "error_url": "https://[broken",
+      "transport_error": "synthetic transport failure"
+    }
+  }
+]

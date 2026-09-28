@@ -12,10 +12,13 @@ at `860e876`; it must be repeated at the final commit.
   Reject an origin, query, body, or operation mismatch.
 - [x] Reject extra calls, assert consumed-call counts at test cleanup, and
   check the order of multi-call replay sequences.
-- [ ] Audit every supported public operation and negative transport path for
-  an explicit expected sequence; remove any permissive routing that could
-  satisfy a test with the wrong supported operation.
-- [ ] Give opaque synthetic tokens a reviewed match policy and rerun the
-  request-mismatch tests under that policy.
+- [x] `TestPublicMethodReplayInventory` inventories all 15 exported client
+  operations and their fixture variants. Normal and failure tests declare an
+  expected sequence; `TestEverySyntheticReplayFixtureHasRequestAndResponse`
+  consumes each normal variant exactly once. Failure outcomes have stored
+  request and response halves in `paired_outcomes.synthetic.json`.
+- [x] Fixtures require the exact synthetic token `test-token`; tests using
+  other synthetic tokens declare their exact expected value per step. The
+  request-mismatch test rejects empty and wrong nonempty tokens.
 - [ ] Have the independent reviewer recheck the final commit and sign off
   item 15 only after all findings above are resolved.
