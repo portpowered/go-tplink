@@ -1,6 +1,34 @@
 {
-  "error_code": 0,
-  "result": {
-    "responseData": "{\"system\":{\"get_sysinfo\":{\"sw_ver\":\"1.5.6 Build 191125 Rel.083657\",\"hw_ver\":\"2.1\",\"model\":\"HS105(US)\",\"deviceId\":\"device-plug-001\",\"alias\":\"Living Room Plug\",\"relay_state\":1,\"on_time\":3600,\"err_code\":0}}}"
+  "request": {
+    "method": "POST",
+    "origin": "https://wap.tplinkcloud.com",
+    "path": "",
+    "query": {
+      "token": [
+        "<nonempty>"
+      ]
+    },
+    "headers": {
+      "Content-Type": [
+        "application/json"
+      ]
+    },
+    "operations": [
+      "passthrough_system_get_sysinfo"
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": [
+        "application/json"
+      ]
+    },
+    "body": {
+      "error_code": 0,
+      "result": {
+        "responseData": "{\"system\":{\"get_sysinfo\":{\"sw_ver\":\"1.5.6 Build 191125 Rel.083657\",\"hw_ver\":\"2.1\",\"model\":\"HS105(US)\",\"deviceId\":\"device-plug-001\",\"alias\":\"Living Room Plug\",\"relay_state\":1,\"on_time\":3600,\"err_code\":0}}}"
+      }
+    }
   }
 }

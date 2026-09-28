@@ -27,6 +27,22 @@ type replayResponse struct {
 	body   []byte
 }
 
+type fixtureExchange struct {
+	Request struct {
+		Method     string              `json:"method"`
+		Origin     string              `json:"origin"`
+		Path       string              `json:"path"`
+		Query      map[string][]string `json:"query"`
+		Headers    map[string][]string `json:"headers"`
+		Operations []string            `json:"operations"`
+	} `json:"request"`
+	Response struct {
+		Status  int                 `json:"status"`
+		Headers map[string][]string `json:"headers"`
+		Body    json.RawMessage     `json:"body"`
+	} `json:"response"`
+}
+
 // replayTransport replays deterministic TP-Link response fixtures at the HTTP
 // seam and records the actual requests made by the provider client.
 type replayTransport struct {
@@ -88,7 +104,60 @@ func (transport *replayTransport) RoundTrip(request *http.Request) (*http.Respon
 	if err != nil {
 		return nil, fmt.Errorf("no replay response for TP-Link operation %q: %w", key, err)
 	}
-	return jsonResponse(http.StatusOK, fixtureBody), nil
+	var exchange fixtureExchange
+	if err := json.Unmarshal(fixtureBody, &exchange); err != nil {
+		return nil, fmt.Errorf("decode replay fixture %q: %w", fixturePath, err)
+	}
+	if err := matchFixtureRequest(request, key, exchange); err != nil {
+		return nil, fmt.Errorf("replay fixture %q request mismatch: %w", fixturePath, err)
+	}
+	return &http.Response{
+		StatusCode: exchange.Response.Status,
+		Header:     http.Header(exchange.Response.Headers),
+		Body:       io.NopCloser(bytes.NewReader(exchange.Response.Body)),
+	}, nil
+}
+
+func matchFixtureRequest(request *http.Request, operation string, exchange fixtureExchange) error {
+	want := exchange.Request
+	if request.Method != want.Method || request.URL.Scheme+"://"+request.URL.Host != want.Origin || request.URL.EscapedPath() != want.Path {
+		return fmt.Errorf("got %s %s, want %s %s%s", request.Method, request.URL, want.Method, want.Origin, want.Path)
+	}
+	query := request.URL.Query()
+	if len(query) != len(want.Query) {
+		return fmt.Errorf("query = %v, want %v", query, want.Query)
+	}
+	for name, values := range want.Query {
+		got := query[name]
+		if len(got) != len(values) {
+			return fmt.Errorf("query %s = %v, want %v", name, got, values)
+		}
+		for i, value := range values {
+			if value == "<nonempty>" && got[i] != "" {
+				continue
+			}
+			if got[i] != value {
+				return fmt.Errorf("query %s[%d] = %q, want %q", name, i, got[i], value)
+			}
+		}
+	}
+	for name, values := range want.Headers {
+		got := request.Header.Values(name)
+		if len(got) != len(values) {
+			return fmt.Errorf("header %s = %v, want %v", name, got, values)
+		}
+		for i, value := range values {
+			if got[i] != value {
+				return fmt.Errorf("header %s[%d] = %q, want %q", name, i, got[i], value)
+			}
+		}
+	}
+	for _, allowed := range want.Operations {
+		if operation == allowed {
+			return nil
+		}
+	}
+	return fmt.Errorf("operation %q is not in %v", operation, want.Operations)
 }
 
 func (transport *replayTransport) useFixture(operationKey, fixtureStem string) {

@@ -1,23 +1,51 @@
 {
-  "error_code": 0,
-  "result": {
-    "deviceList": [
-      {
-        "deviceType": "IOT.SMARTPLUGSWITCH",
-        "deviceId": "device-plug-001",
-        "alias": "Living Room Plug",
-        "deviceModel": "HS105(US)",
-        "deviceMac": "AABBCCDDEEFF",
-        "fwVer": "1.5.6 Build 191125 Rel.083657",
-        "deviceHwVer": "2.1",
-        "hwId": "hw-id-plug-001",
-        "fwId": "fw-id-plug-001",
-        "oemId": "oem-id-plug-001",
-        "appServerUrl": "https://use1-wap.tplinkcloud.com",
-        "deviceRegion": "us-east-1",
-        "status": 1,
-        "isSameRegion": true
-      }
+  "request": {
+    "method": "POST",
+    "origin": "https://wap.tplinkcloud.com",
+    "path": "",
+    "query": {
+      "token": [
+        "<nonempty>"
+      ]
+    },
+    "headers": {
+      "Content-Type": [
+        "application/json"
+      ]
+    },
+    "operations": [
+      "getDeviceList"
     ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": [
+        "application/json"
+      ]
+    },
+    "body": {
+      "error_code": 0,
+      "result": {
+        "deviceList": [
+          {
+            "deviceType": "IOT.SMARTPLUGSWITCH",
+            "deviceId": "device-plug-001",
+            "alias": "Living Room Plug",
+            "deviceModel": "HS105(US)",
+            "deviceMac": "AABBCCDDEEFF",
+            "fwVer": "1.5.6 Build 191125 Rel.083657",
+            "deviceHwVer": "2.1",
+            "hwId": "hw-id-plug-001",
+            "fwId": "fw-id-plug-001",
+            "oemId": "oem-id-plug-001",
+            "appServerUrl": "https://use1-wap.tplinkcloud.com",
+            "deviceRegion": "us-east-1",
+            "status": 1,
+            "isSameRegion": true
+          }
+        ]
+      }
+    }
   }
 }

@@ -18,6 +18,13 @@ Synthetic fixtures belong under
 keep that classification visible. Do not move these files into a `captured/`
 directory or describe them as sanitized live captures.
 
+The synthetic HTTP fixtures now pair each response with a request envelope:
+method, origin, path, query token policy, relevant headers, and permitted
+operation. The replay transport rejects a request outside that envelope.
+Command arguments and request-specific values are also checked in Go replay
+tests. The fixture bodies do not yet encode every argument or the expected
+number and order of calls; this remains open under library standard 15.
+
 If a future live or instrumented capture is added, keep it separately under
 `tests/replay/fixtures/captured/`. Add a neighboring provenance note with the
 operation, UTC capture date, source category, capture boundary, behavior

@@ -1,6 +1,35 @@
 {
-  "error_code": 0,
-  "result": {
-    "responseData": "{\"err_code\":-1,\"err_msg\":\"module not support\"}"
+  "request": {
+    "method": "POST",
+    "origin": "https://wap.tplinkcloud.com",
+    "path": "",
+    "query": {
+      "token": [
+        "<nonempty>"
+      ]
+    },
+    "headers": {
+      "Content-Type": [
+        "application/json"
+      ]
+    },
+    "operations": [
+      "passthrough_system_get_sysinfo",
+      "passthrough_lightingservice_transition_light_state"
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": [
+        "application/json"
+      ]
+    },
+    "body": {
+      "error_code": 0,
+      "result": {
+        "responseData": "{\"err_code\":-1,\"err_msg\":\"module not support\"}"
+      }
+    }
   }
 }

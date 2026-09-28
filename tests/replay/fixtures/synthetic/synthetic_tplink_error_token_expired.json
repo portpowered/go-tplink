@@ -1,4 +1,32 @@
 {
-  "error_code": -20651,
-  "msg": "Token expired"
+  "request": {
+    "method": "POST",
+    "origin": "https://wap.tplinkcloud.com",
+    "path": "",
+    "query": {
+      "token": [
+        "<nonempty>"
+      ]
+    },
+    "headers": {
+      "Content-Type": [
+        "application/json"
+      ]
+    },
+    "operations": [
+      "getDeviceList"
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": [
+        "application/json"
+      ]
+    },
+    "body": {
+      "error_code": -20651,
+      "msg": "Token expired"
+    }
+  }
 }

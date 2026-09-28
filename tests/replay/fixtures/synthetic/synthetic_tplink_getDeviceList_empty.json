@@ -1,6 +1,34 @@
 {
-  "error_code": 0,
-  "result": {
-    "deviceList": []
+  "request": {
+    "method": "POST",
+    "origin": "https://wap.tplinkcloud.com",
+    "path": "",
+    "query": {
+      "token": [
+        "<nonempty>"
+      ]
+    },
+    "headers": {
+      "Content-Type": [
+        "application/json"
+      ]
+    },
+    "operations": [
+      "getDeviceList"
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": [
+        "application/json"
+      ]
+    },
+    "body": {
+      "error_code": 0,
+      "result": {
+        "deviceList": []
+      }
+    }
   }
 }
