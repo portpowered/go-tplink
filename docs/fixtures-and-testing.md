@@ -19,11 +19,12 @@ keep that classification visible. Do not move these files into a `captured/`
 directory or describe them as sanitized live captures.
 
 The synthetic HTTP fixtures now pair each response with a request envelope:
-method, origin, path, query token policy, relevant headers, and permitted
-operation. The replay transport rejects a request outside that envelope.
-Command arguments and request-specific values are also checked in Go replay
-tests. The fixture bodies do not yet encode every argument or the expected
-number and order of calls; this remains open under library standard 15.
+method, origin, path, query token policy, relevant headers, permitted operation,
+and complete synthetic JSON request body variants. The replay transport rejects
+a request outside that envelope; Go replay tests also check request-specific
+values. The harness still permits default routing and does not assert the
+expected number and order of calls for every case, so library standard 15
+remains open.
 
 If a future live or instrumented capture is added, keep it separately under
 `tests/replay/fixtures/captured/`. Add a neighboring provenance note with the

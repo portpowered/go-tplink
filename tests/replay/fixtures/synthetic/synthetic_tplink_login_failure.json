@@ -11,6 +11,17 @@
     },
     "operations": [
       "login"
+    ],
+    "bodies": [
+      {
+        "method": "login",
+        "params": {
+          "appType": "Tapo_Android",
+          "cloudPassword": "placeholder-password",
+          "cloudUserName": "bad@example.com",
+          "terminalUUID": "go-tplink-client"
+        }
+      }
     ]
   },
   "response": {

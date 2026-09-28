@@ -27,7 +27,7 @@ func TestEverySyntheticReplayFixtureHasRequestAndResponse(t *testing.T) {
 			if err := json.Unmarshal(data, &exchange); err != nil {
 				t.Fatal(err)
 			}
-			if exchange.Request.Method == "" || exchange.Request.Origin == "" || len(exchange.Request.Operations) == 0 || exchange.Response.Status == 0 || len(exchange.Response.Body) == 0 {
+			if exchange.Request.Method == "" || exchange.Request.Origin == "" || len(exchange.Request.Operations) == 0 || len(exchange.Request.Bodies) == 0 || exchange.Response.Status == 0 || len(exchange.Response.Body) == 0 {
 				t.Fatal("fixture is missing its request or response")
 			}
 		})
@@ -52,6 +52,14 @@ func TestReplayFixtureRejectsRequestOutsidePair(t *testing.T) {
 		if response, err := transport.RoundTrip(bad); err == nil || response != nil {
 			t.Fatalf("mismatched request returned response %v, error %v", response, err)
 		}
+	}
+	unexpectedBody, err := http.NewRequest(http.MethodPost, replayBaseURL+"?token=test-token", strings.NewReader(`{"method":"getDeviceList","unexpected":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	unexpectedBody.Header.Set("Content-Type", "application/json")
+	if response, err := transport.RoundTrip(unexpectedBody); err == nil || response != nil {
+		t.Fatalf("mismatched body returned response %v, error %v", response, err)
 	}
 	response, err := transport.RoundTrip(request(replayBaseURL, "test-token"))
 	if err != nil {

@@ -16,6 +16,22 @@
     "operations": [
       "passthrough_system_get_sysinfo",
       "passthrough_lightingservice_transition_light_state"
+    ],
+    "bodies": [
+      {
+        "method": "passthrough",
+        "params": {
+          "deviceId": "device-unknown-001",
+          "requestData": "{\"system\":{\"get_sysinfo\":\"\"}}"
+        }
+      },
+      {
+        "method": "passthrough",
+        "params": {
+          "deviceId": "device-plug-001",
+          "requestData": "{\"smartlife.iot.smartbulb.lightingservice\":{\"transition_light_state\":{\"brightness\":50}}}"
+        }
+      }
     ]
   },
   "response": {

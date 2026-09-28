@@ -15,6 +15,15 @@
     },
     "operations": [
       "passthrough_system_set_dev_alias"
+    ],
+    "bodies": [
+      {
+        "method": "passthrough",
+        "params": {
+          "deviceId": "device-plug-001",
+          "requestData": "{\"system\":{\"set_dev_alias\":{\"alias\":\"New Name\"}}}"
+        }
+      }
     ]
   },
   "response": {

@@ -15,6 +15,15 @@
     },
     "operations": [
       "passthrough_system_reboot"
+    ],
+    "bodies": [
+      {
+        "method": "passthrough",
+        "params": {
+          "deviceId": "device-plug-001",
+          "requestData": "{\"system\":{\"reboot\":{\"delay\":1}}}"
+        }
+      }
     ]
   },
   "response": {

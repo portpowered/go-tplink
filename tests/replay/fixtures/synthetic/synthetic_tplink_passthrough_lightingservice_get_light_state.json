@@ -15,6 +15,15 @@
     },
     "operations": [
       "passthrough_lightingservice_get_light_state"
+    ],
+    "bodies": [
+      {
+        "method": "passthrough",
+        "params": {
+          "deviceId": "device-bulb-001",
+          "requestData": "{\"smartlife.iot.smartbulb.lightingservice\":{\"get_light_state\":\"\"}}"
+        }
+      }
     ]
   },
   "response": {

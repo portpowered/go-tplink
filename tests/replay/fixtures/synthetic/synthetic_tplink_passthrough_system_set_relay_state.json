@@ -15,6 +15,22 @@
     },
     "operations": [
       "passthrough_system_set_relay_state"
+    ],
+    "bodies": [
+      {
+        "method": "passthrough",
+        "params": {
+          "deviceId": "device-plug-001",
+          "requestData": "{\"system\":{\"set_relay_state\":{\"state\":1}}}"
+        }
+      },
+      {
+        "method": "passthrough",
+        "params": {
+          "deviceId": "device-plug-001",
+          "requestData": "{\"system\":{\"set_relay_state\":{\"state\":0}}}"
+        }
+      }
     ]
   },
   "response": {

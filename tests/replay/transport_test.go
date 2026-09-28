@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 )
@@ -35,6 +36,7 @@ type fixtureExchange struct {
 		Query      map[string][]string `json:"query"`
 		Headers    map[string][]string `json:"headers"`
 		Operations []string            `json:"operations"`
+		Bodies     []json.RawMessage   `json:"bodies"`
 	} `json:"request"`
 	Response struct {
 		Status  int                 `json:"status"`
@@ -108,7 +110,7 @@ func (transport *replayTransport) RoundTrip(request *http.Request) (*http.Respon
 	if err := json.Unmarshal(fixtureBody, &exchange); err != nil {
 		return nil, fmt.Errorf("decode replay fixture %q: %w", fixturePath, err)
 	}
-	if err := matchFixtureRequest(request, key, exchange); err != nil {
+	if err := matchFixtureRequest(request, requestBody, key, exchange); err != nil {
 		return nil, fmt.Errorf("replay fixture %q request mismatch: %w", fixturePath, err)
 	}
 	return &http.Response{
@@ -118,7 +120,7 @@ func (transport *replayTransport) RoundTrip(request *http.Request) (*http.Respon
 	}, nil
 }
 
-func matchFixtureRequest(request *http.Request, operation string, exchange fixtureExchange) error {
+func matchFixtureRequest(request *http.Request, body []byte, operation string, exchange fixtureExchange) error {
 	want := exchange.Request
 	if request.Method != want.Method || request.URL.Scheme+"://"+request.URL.Host != want.Origin || request.URL.EscapedPath() != want.Path {
 		return fmt.Errorf("got %s %s, want %s %s%s", request.Method, request.URL, want.Method, want.Origin, want.Path)
@@ -152,12 +154,30 @@ func matchFixtureRequest(request *http.Request, operation string, exchange fixtu
 			}
 		}
 	}
+	matchedOperation := false
 	for _, allowed := range want.Operations {
 		if operation == allowed {
+			matchedOperation = true
+			break
+		}
+	}
+	if !matchedOperation {
+		return fmt.Errorf("operation %q is not in %v", operation, want.Operations)
+	}
+	var actual any
+	if err := json.Unmarshal(body, &actual); err != nil {
+		return fmt.Errorf("decode request body: %w", err)
+	}
+	for _, expected := range want.Bodies {
+		var candidate any
+		if err := json.Unmarshal(expected, &candidate); err != nil {
+			return fmt.Errorf("decode expected request body: %w", err)
+		}
+		if reflect.DeepEqual(actual, candidate) {
 			return nil
 		}
 	}
-	return fmt.Errorf("operation %q is not in %v", operation, want.Operations)
+	return fmt.Errorf("request body did not match any of %d stored variants", len(want.Bodies))
 }
 
 func (transport *replayTransport) useFixture(operationKey, fixtureStem string) {

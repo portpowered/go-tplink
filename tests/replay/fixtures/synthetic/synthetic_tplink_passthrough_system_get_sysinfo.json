@@ -15,6 +15,15 @@
     },
     "operations": [
       "passthrough_system_get_sysinfo"
+    ],
+    "bodies": [
+      {
+        "method": "passthrough",
+        "params": {
+          "deviceId": "device-plug-001",
+          "requestData": "{\"system\":{\"get_sysinfo\":\"\"}}"
+        }
+      }
     ]
   },
   "response": {
