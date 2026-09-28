@@ -2,7 +2,7 @@
 
 [![Go version](https://img.shields.io/github/go-mod/go-version/portpowered/go-tplink)](go.mod)
 [![CI](https://github.com/portpowered/go-tplink/actions/workflows/ci.yml/badge.svg)](https://github.com/portpowered/go-tplink/actions/workflows/ci.yml)
-[![Replay coverage](https://github.com/portpowered/go-tplink/wiki/coverage.svg)](https://raw.githack.com/wiki/portpowered/go-tplink/coverage.html)
+[![Replay coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fportpowered.github.io%2Fgo-tplink%2Fcoverage.json)](https://portpowered.github.io/go-tplink/coverage.html)
 [![Release](https://img.shields.io/github/v/release/portpowered/go-tplink?display_name=tag)](https://github.com/portpowered/go-tplink/releases/latest)
 [![Go Reference](https://pkg.go.dev/badge/github.com/portpowered/go-tplink.svg)](https://pkg.go.dev/github.com/portpowered/go-tplink)
 [![License](https://img.shields.io/github/license/portpowered/go-tplink)](LICENSE)

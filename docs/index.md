@@ -8,6 +8,10 @@ Start with the [repository README](https://github.com/portpowered/go-tplink#read
 for installation and usage. The pages here describe the package boundaries,
 protocol behavior, and test evidence.
 
+The documentation workflow publishes a replay coverage report alongside
+these pages. It is generated from the offline replay tests after enforcing a
+90% statement coverage floor for `pkg/tplink`.
+
 ## Pages
 
 - [Client architecture](architecture.md)

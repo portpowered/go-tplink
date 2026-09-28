@@ -29,3 +29,4 @@ api-compatibility:
 
 docs-check:
 	$(PYTHON) -m mkdocs build --strict
+	$(PYTHON) tools/render_replay_coverage.py

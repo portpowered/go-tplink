@@ -43,7 +43,9 @@ Run these from the repository root:
 `make check` and CI run the offline replay suite against `pkg/tplink` with Go
 statement coverage enabled. The gate requires at least 90% of client package
 statements to execute; the profile is written to a temporary directory and
-removed after the check.
+removed after the check. The documentation workflow generates a standalone
+HTML report and Shields endpoint JSON from the same replay suite, then includes
+both files in the GitHub Pages site.
 
 There is no separate integration-test or live-test target: the module currently
 has no live-account test harness, and ordinary checks must remain independent
