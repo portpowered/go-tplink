@@ -1,1 +1,662 @@
+openapi: 3.0.3
+info:
+  title: TP-Link Kasa Cloud API (go-tplink wire contract)
+  version: 0.1.0
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+  description: |
+    Implementation-derived documentation for the cloud request and response shapes used by go-tplink.
 
+    Evidence caveat: this contract is based on the current client implementation and synthetic offline replay fixtures. The fixtures have no verifiable capture provenance. This document is not vendor-issued and has not been verified against live captures; device, account, region, and firmware behavior may vary.
+servers:
+  - url: https://use1-wap.tplinkcloud.com
+    description: Default base URL embedded in go-tplink.
+  - url: https://eu-wap.tplinkcloud.com
+    description: Regional base URL constant embedded in go-tplink.
+  - url: https://aps1-wap.tplinkcloud.com
+    description: Regional base URL constant embedded in go-tplink.
+  - url: https://wap.tplinkcloud.com
+    description: Global base URL constant embedded in go-tplink.
+tags:
+  - name: Cloud request
+    description: All implemented operations use this single cloud request endpoint.
+paths:
+  /:
+    post:
+      tags:
+        - Cloud request
+      security: []
+      operationId: sendCloudRequest
+      summary: Send a cloud API request
+      description: |
+        go-tplink sends every cloud operation as an HTTPS POST to a configured regional base URL. The JSON body selects the operation with its method field: login, getDeviceList, or passthrough.
+
+        The token query parameter is omitted for login and required for getDeviceList and passthrough. The client sends it in the URL, so redact it from logs and traces.
+
+        The passthrough params.requestData value is itself a JSON-encoded string. Its decoded object has one supported command under either system or smartlife.iot.smartbulb.lightingservice. The response result.responseData is also a JSON-encoded string.
+
+        Supported client operation mapping:
+        - getDeviceList: list devices.
+        - system.set_relay_state: turn a plug on or off with state 1 or 0.
+        - system.get_sysinfo: read plug power state and on-time.
+        - system.reboot: reboot a plug; this client sends delay 1.
+        - system.set_dev_alias: rename a device.
+        - smartlife.iot.smartbulb.lightingservice.get_light_state: read bulb state, brightness, color temperature, or color. The scalar getters use this same command.
+        - smartlife.iot.smartbulb.lightingservice.transition_light_state: set light state, brightness, color temperature, or hue and saturation.
+
+        Lighting transition fields used by the client include brightness (0-100), color_temp in Kelvin, hue (0-360), saturation (0-100), and on_off (0 or 1). SetLightState also accepts an arbitrary state map, so additional device-specific fields may be sent. Device support and accepted values depend on the device.
+
+        The client maps cloud error_code values -20004, -20651, -20104, and -20601 to rate-limit, expired-token, parameter, and authentication errors. Other non-zero cloud codes become generic cloud errors. Device-level err_code values may be nested under a command or appear at the top level of decoded responseData.
+      parameters:
+        - name: token
+          in: query
+          required: false
+          description: |
+            Session token. Omit for login. Required by the implemented client for getDeviceList and passthrough requests.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        description: One method-specific JSON envelope per request.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloudRequest'
+            examples:
+              login:
+                summary: Login request (synthetic example)
+                value:
+                  method: login
+                  params:
+                    appType: Tapo_Android
+                    cloudUserName: user@example.test
+                    cloudPassword: placeholder-password
+                    terminalUUID: go-tplink-client
+              getDeviceList:
+                summary: Device-list request (synthetic example)
+                value:
+                  method: getDeviceList
+              turnOn:
+                summary: Turn a plug on
+                value:
+                  method: passthrough
+                  params:
+                    deviceId: example-plug-id
+                    requestData: '{"system":{"set_relay_state":{"state":1}}}'
+              turnOff:
+                summary: Turn a plug off
+                value:
+                  method: passthrough
+                  params:
+                    deviceId: example-plug-id
+                    requestData: '{"system":{"set_relay_state":{"state":0}}}'
+              getPowerState:
+                summary: Read plug system information
+                value:
+                  method: passthrough
+                  params:
+                    deviceId: example-plug-id
+                    requestData: '{"system":{"get_sysinfo":""}}'
+              reboot:
+                summary: Reboot a plug
+                value:
+                  method: passthrough
+                  params:
+                    deviceId: example-plug-id
+                    requestData: '{"system":{"reboot":{"delay":1}}}'
+              setAlias:
+                summary: Set a device alias
+                value:
+                  method: passthrough
+                  params:
+                    deviceId: example-device-id
+                    requestData: '{"system":{"set_dev_alias":{"alias":"Desk Plug"}}}'
+              getLightState:
+                summary: Read bulb light state
+                value:
+                  method: passthrough
+                  params:
+                    deviceId: example-bulb-id
+                    requestData: '{"smartlife.iot.smartbulb.lightingservice":{"get_light_state":""}}'
+              setBrightness:
+                summary: Set bulb brightness
+                value:
+                  method: passthrough
+                  params:
+                    deviceId: example-bulb-id
+                    requestData: '{"smartlife.iot.smartbulb.lightingservice":{"transition_light_state":{"brightness":50}}}'
+              setColorTemp:
+                summary: Set bulb color temperature
+                value:
+                  method: passthrough
+                  params:
+                    deviceId: example-bulb-id
+                    requestData: '{"smartlife.iot.smartbulb.lightingservice":{"transition_light_state":{"color_temp":4000}}}'
+              setColor:
+                summary: Set bulb hue and saturation
+                value:
+                  method: passthrough
+                  params:
+                    deviceId: example-bulb-id
+                    requestData: '{"smartlife.iot.smartbulb.lightingservice":{"transition_light_state":{"hue":240,"saturation":80}}}'
+              setLightState:
+                summary: Set multiple bulb state fields
+                value:
+                  method: passthrough
+                  params:
+                    deviceId: example-bulb-id
+                    requestData: '{"smartlife.iot.smartbulb.lightingservice":{"transition_light_state":{"on_off":1,"brightness":75,"hue":120,"saturation":50}}}'
+      responses:
+        '200':
+          description: |
+            Cloud response envelope. Cloud-level failures may also use this HTTP status and are represented by a non-zero error_code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloudResponseEnvelope'
+              examples:
+                loginSuccess:
+                  summary: Successful login response (synthetic shape)
+                  value:
+                    error_code: 0
+                    result:
+                      accountId: example-account-id
+                      token: example-session-token
+                      email: user@example.test
+                      regTime: '2020-01-01 00:00:00'
+                      countryCode: US
+                deviceListSuccess:
+                  summary: Device-list response (synthetic shape)
+                  value:
+                    error_code: 0
+                    result:
+                      deviceList:
+                        - deviceType: IOT.SMARTPLUGSWITCH
+                          deviceId: example-plug-id
+                          alias: Desk Plug
+                          deviceModel: HS105(US)
+                          deviceMac: AABBCCDDEEFF
+                          fwVer: 1.5.6
+                          deviceHwVer: '2.1'
+                          hwId: example-hardware-id
+                          fwId: example-firmware-id
+                          oemId: example-oem-id
+                          appServerUrl: https://use1-wap.tplinkcloud.com
+                          deviceRegion: us-east-1
+                          status: 1
+                          isSameRegion: true
+                passthroughSuccess:
+                  summary: Passthrough response (synthetic shape)
+                  value:
+                    error_code: 0
+                    result:
+                      responseData: '{"system":{"set_relay_state":{"err_code":0}}}'
+                cloudError:
+                  summary: Expired-token error (synthetic shape)
+                  value:
+                    error_code: -20651
+                    msg: Token expired
+        '4XX':
+          description: Non-2xx HTTP response. The client reports the HTTP status and does not decode the body as a cloud envelope.
+        '5XX':
+          description: Non-2xx HTTP response. The client reports the HTTP status and does not decode the body as a cloud envelope.
+        default:
+          description: Non-2xx HTTP response. The client reports the HTTP status and does not decode this response as a cloud envelope.
+components:
+  schemas:
+    CloudRequest:
+      description: Discriminated request envelope for the single POST endpoint.
+      oneOf:
+        - $ref: '#/components/schemas/LoginCloudRequest'
+        - $ref: '#/components/schemas/GetDeviceListCloudRequest'
+        - $ref: '#/components/schemas/PassthroughCloudRequest'
+      discriminator:
+        propertyName: method
+        mapping:
+          login: '#/components/schemas/LoginCloudRequest'
+          getDeviceList: '#/components/schemas/GetDeviceListCloudRequest'
+          passthrough: '#/components/schemas/PassthroughCloudRequest'
+    LoginCloudRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - method
+        - params
+      properties:
+        method:
+          type: string
+          enum:
+            - login
+        params:
+          $ref: '#/components/schemas/LoginParams'
+    GetDeviceListCloudRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - method
+      properties:
+        method:
+          type: string
+          enum:
+            - getDeviceList
+      description: The implemented client sends no params for this method.
+    PassthroughCloudRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - method
+        - params
+      properties:
+        method:
+          type: string
+          enum:
+            - passthrough
+        params:
+          $ref: '#/components/schemas/PassthroughParams'
+    LoginParams:
+      type: object
+      additionalProperties: false
+      required:
+        - appType
+        - cloudUserName
+        - cloudPassword
+        - terminalUUID
+      properties:
+        appType:
+          type: string
+          enum:
+            - Tapo_Android
+          description: Fixed appType value sent by this client.
+        cloudUserName:
+          type: string
+          description: Account email supplied to Login.
+        cloudPassword:
+          type: string
+          writeOnly: true
+          description: Account password supplied to Login.
+        terminalUUID:
+          type: string
+          enum:
+            - go-tplink-client
+          description: Fixed terminalUUID value sent by this client.
+    PassthroughParams:
+      type: object
+      additionalProperties: false
+      required:
+        - deviceId
+        - requestData
+      properties:
+        deviceId:
+          type: string
+          description: Device identifier from the device-list result.
+        requestData:
+          type: string
+          description: |
+            JSON-encoded string containing one command object. After decoding, its shape is described by PassthroughCommand. The cloud response uses the same string-encoding pattern for result.responseData.
+          example: '{"system":{"set_relay_state":{"state":1}}}'
+          x-embedded-json-schema:
+            $ref: '#/components/schemas/PassthroughCommand'
+    PassthroughCommand:
+      description: |
+        Inner JSON value after decoding params.requestData. The client sends one command under one namespace per request.
+      oneOf:
+        - $ref: '#/components/schemas/SystemGetSysInfoCommand'
+        - $ref: '#/components/schemas/SystemSetRelayStateCommand'
+        - $ref: '#/components/schemas/SystemRebootCommand'
+        - $ref: '#/components/schemas/SystemSetDevAliasCommand'
+        - $ref: '#/components/schemas/LightingGetLightStateCommand'
+        - $ref: '#/components/schemas/LightingTransitionLightStateCommand'
+    SystemGetSysInfoCommand:
+      type: object
+      additionalProperties: false
+      required:
+        - system
+      properties:
+        system:
+          type: object
+          additionalProperties: false
+          required:
+            - get_sysinfo
+          properties:
+            get_sysinfo:
+              type: string
+              enum:
+                - ''
+              description: Empty string for the read command.
+    SystemSetRelayStateCommand:
+      type: object
+      additionalProperties: false
+      required:
+        - system
+      properties:
+        system:
+          type: object
+          additionalProperties: false
+          required:
+            - set_relay_state
+          properties:
+            set_relay_state:
+              type: object
+              additionalProperties: false
+              required:
+                - state
+              properties:
+                state:
+                  type: integer
+                  enum:
+                    - 0
+                    - 1
+                  description: 1 turns the relay on; 0 turns it off.
+    SystemRebootCommand:
+      type: object
+      additionalProperties: false
+      required:
+        - system
+      properties:
+        system:
+          type: object
+          additionalProperties: false
+          required:
+            - reboot
+          properties:
+            reboot:
+              type: object
+              additionalProperties: false
+              required:
+                - delay
+              properties:
+                delay:
+                  type: integer
+                  enum:
+                    - 1
+                  description: The implemented client sends a one-second delay.
+    SystemSetDevAliasCommand:
+      type: object
+      additionalProperties: false
+      required:
+        - system
+      properties:
+        system:
+          type: object
+          additionalProperties: false
+          required:
+            - set_dev_alias
+          properties:
+            set_dev_alias:
+              type: object
+              additionalProperties: false
+              required:
+                - alias
+              properties:
+                alias:
+                  type: string
+    LightingGetLightStateCommand:
+      type: object
+      additionalProperties: false
+      required:
+        - smartlife.iot.smartbulb.lightingservice
+      properties:
+        smartlife.iot.smartbulb.lightingservice:
+          type: object
+          additionalProperties: false
+          required:
+            - get_light_state
+          properties:
+            get_light_state:
+              type: string
+              enum:
+                - ''
+              description: Empty string for the read command.
+    LightingTransitionLightStateCommand:
+      type: object
+      additionalProperties: false
+      required:
+        - smartlife.iot.smartbulb.lightingservice
+      properties:
+        smartlife.iot.smartbulb.lightingservice:
+          type: object
+          additionalProperties: false
+          required:
+            - transition_light_state
+          properties:
+            transition_light_state:
+              type: object
+              description: State values accepted by SetLightState; known fields are documented below.
+              properties:
+                on_off:
+                  type: integer
+                  enum:
+                    - 0
+                    - 1
+                brightness:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                color_temp:
+                  type: integer
+                  description: Color temperature in Kelvin; supported values depend on the device.
+                hue:
+                  type: integer
+                  minimum: 0
+                  maximum: 360
+                saturation:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+              additionalProperties: true
+    CloudResponseEnvelope:
+      description: |
+        Expected result or cloud-error shape. Responses have no method discriminator, and response models are permissive because the client unmarshals into zero-valued Go fields; the request method identifies the expected result.
+      anyOf:
+        - $ref: '#/components/schemas/LoginResponse'
+        - $ref: '#/components/schemas/DeviceListResponse'
+        - $ref: '#/components/schemas/PassthroughResponse'
+        - $ref: '#/components/schemas/CloudErrorResponse'
+    CloudResponse:
+      type: object
+      properties:
+        error_code:
+          type: integer
+          description: Zero indicates success; non-zero values indicate cloud-level errors.
+        msg:
+          type: string
+          description: Optional cloud error message.
+    CloudErrorResponse:
+      type: object
+      required:
+        - error_code
+      properties:
+        error_code:
+          type: integer
+          not:
+            enum:
+              - 0
+          description: Non-zero cloud error code. The implementation maps several known codes and preserves other non-zero codes as generic errors.
+        msg:
+          type: string
+          description: Optional cloud error message.
+    LoginResponse:
+      allOf:
+        - $ref: '#/components/schemas/CloudResponse'
+        - type: object
+          properties:
+            result:
+              $ref: '#/components/schemas/LoginResult'
+    LoginResult:
+      type: object
+      properties:
+        accountId:
+          type: string
+        token:
+          type: string
+          description: Opaque session token for subsequent authenticated requests.
+        email:
+          type: string
+        regTime:
+          type: string
+        countryCode:
+          type: string
+    DeviceListResponse:
+      allOf:
+        - $ref: '#/components/schemas/CloudResponse'
+        - type: object
+          properties:
+            result:
+              $ref: '#/components/schemas/DeviceListResult'
+    DeviceListResult:
+      type: object
+      properties:
+        deviceList:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+    Device:
+      type: object
+      description: Device fields represented by the current go-tplink model. Unknown device types are retained.
+      properties:
+        deviceType:
+          type: string
+        deviceId:
+          type: string
+        alias:
+          type: string
+        deviceModel:
+          type: string
+        deviceMac:
+          type: string
+        fwVer:
+          type: string
+        deviceHwVer:
+          type: string
+        hwId:
+          type: string
+        fwId:
+          type: string
+        oemId:
+          type: string
+        appServerUrl:
+          type: string
+          format: uri
+        deviceRegion:
+          type: string
+        status:
+          type: integer
+        isSameRegion:
+          type: boolean
+        is_dimmable:
+          type: integer
+        is_color:
+          type: integer
+        is_variable_color_temp:
+          type: integer
+        brightness:
+          type: integer
+      additionalProperties: true
+    PassthroughResponse:
+      allOf:
+        - $ref: '#/components/schemas/CloudResponse'
+        - type: object
+          properties:
+            result:
+              $ref: '#/components/schemas/PassthroughResult'
+    PassthroughResult:
+      type: object
+      properties:
+        responseData:
+          type: string
+          description: |
+            JSON-encoded device response. After decoding, its known shapes are described by PassthroughCommandResult. Device errors may also appear at the top level.
+          example: '{"system":{"get_sysinfo":{"relay_state":1,"on_time":3600,"err_code":0}}}'
+          x-embedded-json-schema:
+            $ref: '#/components/schemas/PassthroughCommandResult'
+    PassthroughCommandResult:
+      description: Inner JSON value after decoding result.responseData.
+      anyOf:
+        - $ref: '#/components/schemas/SystemCommandResult'
+        - $ref: '#/components/schemas/LightingCommandResult'
+        - $ref: '#/components/schemas/DeviceCommandError'
+    SystemCommandResult:
+      type: object
+      properties:
+        system:
+          type: object
+          properties:
+            get_sysinfo:
+              $ref: '#/components/schemas/SysInfo'
+            set_relay_state:
+              $ref: '#/components/schemas/CommandAcknowledgement'
+            reboot:
+              $ref: '#/components/schemas/CommandAcknowledgement'
+            set_dev_alias:
+              $ref: '#/components/schemas/CommandAcknowledgement'
+          additionalProperties: true
+      additionalProperties: true
+    LightingCommandResult:
+      type: object
+      properties:
+        smartlife.iot.smartbulb.lightingservice:
+          type: object
+          properties:
+            get_light_state:
+              $ref: '#/components/schemas/LightState'
+            transition_light_state:
+              $ref: '#/components/schemas/CommandAcknowledgement'
+          additionalProperties: true
+      additionalProperties: true
+    CommandAcknowledgement:
+      type: object
+      properties:
+        err_code:
+          type: integer
+        err_msg:
+          type: string
+      additionalProperties: true
+    DeviceCommandError:
+      type: object
+      required:
+        - err_code
+      properties:
+        err_code:
+          type: integer
+        err_msg:
+          type: string
+      additionalProperties: true
+    SysInfo:
+      type: object
+      properties:
+        sw_ver:
+          type: string
+        hw_ver:
+          type: string
+        model:
+          type: string
+        deviceId:
+          type: string
+        alias:
+          type: string
+        relay_state:
+          type: integer
+        on_time:
+          type: integer
+        err_code:
+          type: integer
+      additionalProperties: true
+    LightState:
+      type: object
+      properties:
+        on_off:
+          type: integer
+        brightness:
+          type: integer
+        hue:
+          type: integer
+        saturation:
+          type: integer
+        color_temp:
+          type: integer
+        mode:
+          type: string
+        err_code:
+          type: integer
+      additionalProperties: true
