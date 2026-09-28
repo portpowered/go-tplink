@@ -23,6 +23,13 @@
           "deviceId": "device-plug-001",
           "requestData": "{\"system\":{\"set_dev_alias\":{\"alias\":\"New Name\"}}}"
         }
+      },
+      {
+        "method": "passthrough",
+        "params": {
+          "deviceId": "device-plug-001",
+          "requestData": "{\"system\":{\"set_dev_alias\":{\"alias\":\"New name\"}}}"
+        }
       }
     ]
   },

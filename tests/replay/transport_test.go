@@ -91,12 +91,6 @@ func (transport *replayTransport) RoundTrip(request *http.Request) (*http.Respon
 	fixtureStem, hasFixtureRoute := transport.fixtureRoutes[key]
 	transport.mu.Unlock()
 
-	if hasError {
-		return nil, responseError
-	}
-	if hasOverride {
-		return jsonResponse(responseOverride.status, responseOverride.body), nil
-	}
 	if !hasFixtureRoute {
 		fixtureStem = key
 	}
@@ -112,6 +106,12 @@ func (transport *replayTransport) RoundTrip(request *http.Request) (*http.Respon
 	}
 	if err := matchFixtureRequest(request, requestBody, key, exchange); err != nil {
 		return nil, fmt.Errorf("replay fixture %q request mismatch: %w", fixturePath, err)
+	}
+	if hasError {
+		return nil, responseError
+	}
+	if hasOverride {
+		return jsonResponse(responseOverride.status, responseOverride.body), nil
 	}
 	return &http.Response{
 		StatusCode: exchange.Response.Status,

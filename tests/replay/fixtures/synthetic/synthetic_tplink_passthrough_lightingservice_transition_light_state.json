@@ -44,6 +44,13 @@
           "deviceId": "device-bulb-001",
           "requestData": "{\"smartlife.iot.smartbulb.lightingservice\":{\"transition_light_state\":{\"brightness\":75,\"hue\":120,\"on_off\":1,\"saturation\":50}}}"
         }
+      },
+      {
+        "method": "passthrough",
+        "params": {
+          "deviceId": "device-bulb-001",
+          "requestData": "{\"smartlife.iot.smartbulb.lightingservice\":{\"transition_light_state\":{\"color_temp\":3000}}}"
+        }
       }
     ]
   },

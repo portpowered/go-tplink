@@ -73,3 +73,16 @@ func TestReplayFixtureRejectsRequestOutsidePair(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestReplayOverrideStillMatchesRequest(t *testing.T) {
+	transport := newReplayTransport()
+	transport.useResponse("getDeviceList", http.StatusTooManyRequests, []byte(`{"error_code":-20004}`))
+	request, err := http.NewRequest(http.MethodPost, "https://wrong.example.invalid?token=test-token", strings.NewReader(`{"method":"getDeviceList"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	if response, err := transport.RoundTrip(request); err == nil || response != nil {
+		t.Fatalf("override returned response for mismatched request: %v, %v", response, err)
+	}
+}
