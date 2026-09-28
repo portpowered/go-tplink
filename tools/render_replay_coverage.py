@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate replay-coverage assets for the MkDocs site."""
+"""Generate replay-coverage assets for the API documentation site."""
 
 from __future__ import annotations
 

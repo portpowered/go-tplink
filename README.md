@@ -117,20 +117,13 @@ Run commands from the module root:
 | Combined checks | `make check` | No |
 | Replay coverage | `make replay-coverage` | No |
 | API compatibility report | `make api-compatibility` | No |
-| Build documentation site | `make docs-check` | No |
 
-To build the documentation site locally, install the pinned documentation
-dependencies first:
-
-```sh
-python -m pip install -r docs-requirements.txt
-make docs-check
-```
-
-Changes to the README, docs, or site configuration trigger a documentation
-build in CI. Successful pushes to `main` publish the site through GitHub Pages.
-Set the repository's Pages build source to **GitHub Actions** to enable
-deployment.
+The [shared API Docs action](https://github.com/portpowered/api-docs-website-github-action)
+generates the Fumadocs website from the checked-in [OpenAPI contract](api/openapi.yaml).
+The contract describes this client's implemented cloud wire format and is not
+an official or vendor-verified TP-Link specification. The documentation
+workflow also publishes a replay coverage report. Pushes to `main` refresh
+the site through GitHub Pages; pull requests build the site for verification.
 
 ## Safety and redaction
 

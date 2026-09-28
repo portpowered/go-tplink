@@ -49,7 +49,7 @@ both files in the GitHub Pages site.
 
 There is no separate integration-test or live-test target: the module currently
 has no live-account test harness, and ordinary checks must remain independent
-of real accounts and devices. `make docs-check` builds the Markdown
-documentation site with strict link checking. A separate read-only
-device-list example requires user-provided credentials and is documented in
-the README; it is not part of CI.
+of real accounts and devices. The documentation workflow builds the API
+reference from `api/openapi.yaml` with the shared Fumadocs action. A separate
+read-only device-list example requires user-provided credentials and is
+documented in the README; it is not part of CI.

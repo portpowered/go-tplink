@@ -120,8 +120,9 @@ websocket, or long-lived-session protocol in the supported client surface.
 
 ## Protocol artifact status
 
-This document is a human-readable protocol note, not OpenAPI or a vendor-issued
-schema. No formal vendor schema is included with the client, and the checked-in
-JSON fixtures have no verifiable capture provenance. They are maintained as
-synthetic test inputs; they are not evidence of a live exchange. See
+The checked-in `api/openapi.yaml` describes the cloud request and response
+shapes implemented by this client and generates the Fumadocs API reference.
+It is an implementation-derived contract, not a vendor-issued schema. The
+checked-in JSON fixtures have no verifiable capture provenance. They are
+maintained as synthetic test inputs, not evidence of a live exchange. See
 [fixture and verification notes](fixtures-and-testing.md).
