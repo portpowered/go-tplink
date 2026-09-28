@@ -1,4 +1,4 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: TP-Link Kasa Cloud API (go-tplink wire contract)
   version: 0.1.0
@@ -28,26 +28,11 @@ paths:
         - Cloud request
       security: []
       operationId: sendCloudRequest
-      summary: Send a cloud API request
-      description: |
-        go-tplink sends every cloud operation as an HTTPS POST to a configured regional base URL. The JSON body selects the operation with its method field: login, getDeviceList, or passthrough.
-
-        The token query parameter is omitted for login and required for getDeviceList and passthrough. The client sends it in the URL, so redact it from logs and traces.
-
-        The passthrough params.requestData value is itself a JSON-encoded string. Its decoded object has one supported command under either system or smartlife.iot.smartbulb.lightingservice. The response result.responseData is also a JSON-encoded string.
-
-        Supported client operation mapping:
-        - getDeviceList: list devices.
-        - system.set_relay_state: turn a plug on or off with state 1 or 0.
-        - system.get_sysinfo: read plug power state and on-time.
-        - system.reboot: reboot a plug; this client sends delay 1.
-        - system.set_dev_alias: rename a device.
-        - smartlife.iot.smartbulb.lightingservice.get_light_state: read bulb state, brightness, color temperature, or color. The scalar getters use this same command.
-        - smartlife.iot.smartbulb.lightingservice.transition_light_state: set light state, brightness, color temperature, or hue and saturation.
-
-        Lighting transition fields used by the client include brightness (0-100), color_temp in Kelvin, hue (0-360), saturation (0-100), and on_off (0 or 1). SetLightState also accepts an arbitrary state map, so additional device-specific fields may be sent. Device support and accepted values depend on the device.
-
-        The client maps cloud error_code values -20004, -20651, -20104, and -20601 to rate-limit, expired-token, parameter, and authentication errors. Other non-zero cloud codes become generic cloud errors. Device-level err_code values may be nested under a command or appear at the top level of decoded responseData.
+      summary: Dispatch a cloud method
+      description: >-
+        All implemented cloud methods use this POST route. The method field
+        selects login, device enumeration, or passthrough. See the Guides in
+        the sidebar for each client operation, its inputs, and decoded payloads.
       parameters:
         - name: token
           in: query
@@ -186,6 +171,22 @@ paths:
                           deviceRegion: us-east-1
                           status: 1
                           isSameRegion: true
+                        - deviceType: IOT.SMARTBULB
+                          deviceId: example-bulb-id
+                          alias: Hall Bulb
+                          deviceModel: LB130
+                          is_dimmable: 1
+                          is_color: 1
+                          is_variable_color_temp: 1
+                        - deviceType: IOT.FUTURE.DEVICE
+                          deviceId: example-other-id
+                          alias: New Device Type
+                emptyDeviceList:
+                  summary: Empty device list (synthetic shape)
+                  value:
+                    error_code: 0
+                    result:
+                      deviceList: []
                 passthroughSuccess:
                   summary: Passthrough response (synthetic shape)
                   value:
@@ -292,11 +293,14 @@ components:
           description: Device identifier from the device-list result.
         requestData:
           type: string
-          description: |
-            JSON-encoded string containing one command object. After decoding, its shape is described by PassthroughCommand. The cloud response uses the same string-encoding pattern for result.responseData.
-          example: '{"system":{"set_relay_state":{"state":1}}}'
-          x-embedded-json-schema:
+          contentMediaType: application/json
+          contentSchema:
             $ref: '#/components/schemas/PassthroughCommand'
+          description: |
+            JSON-encoded string containing one command object. Decode the string
+            to see the PassthroughCommand schema; do not send that object in
+            place of the string. The Guides list the fields for each command.
+          example: '{"system":{"set_relay_state":{"state":1}}}'
     PassthroughCommand:
       description: |
         Inner JSON value after decoding params.requestData. The client sends one command under one namespace per request.
@@ -421,30 +425,38 @@ components:
             - transition_light_state
           properties:
             transition_light_state:
-              type: object
-              description: State values accepted by SetLightState; known fields are documented below.
-              properties:
-                on_off:
-                  type: integer
-                  enum:
-                    - 0
-                    - 1
-                brightness:
-                  type: integer
-                  minimum: 0
-                  maximum: 100
-                color_temp:
-                  type: integer
-                  description: Color temperature in Kelvin; supported values depend on the device.
-                hue:
-                  type: integer
-                  minimum: 0
-                  maximum: 360
-                saturation:
-                  type: integer
-                  minimum: 0
-                  maximum: 100
-              additionalProperties: true
+              $ref: '#/components/schemas/LightTransitionState'
+    LightTransitionState:
+      type: object
+      description: >-
+        State values accepted by SetLightState. Other properties may be sent by
+        the generic method; device support depends on its capabilities.
+      properties:
+        on_off:
+          type: integer
+          enum:
+            - 0
+            - 1
+          description: 1 turns the bulb on; 0 turns it off.
+        brightness:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Brightness from 0 through 100.
+        color_temp:
+          type: integer
+          description: Color temperature in Kelvin; supported values depend on the device.
+        hue:
+          type: integer
+          minimum: 0
+          maximum: 360
+          description: Hue from 0 through 360 degrees.
+        saturation:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Saturation from 0 through 100.
+      additionalProperties: true
     CloudResponseEnvelope:
       description: |
         Expected result or cloud-error shape. Responses have no method discriminator, and response models are permissive because the client unmarshals into zero-valued Go fields; the request method identifies the expected result.
@@ -458,7 +470,16 @@ components:
       properties:
         error_code:
           type: integer
-          description: Zero indicates success; non-zero values indicate cloud-level errors.
+          description: >-
+            Zero indicates success. Known cloud failures include -20004 (rate
+            limit), -20651 (expired token), -20104 (parameter error), and
+            -20601 (authentication error). Other non-zero codes may occur.
+          x-extensible-enum:
+            - 0
+            - -20004
+            - -20651
+            - -20104
+            - -20601
         msg:
           type: string
           description: Optional cloud error message.
@@ -506,6 +527,7 @@ components:
               $ref: '#/components/schemas/DeviceListResult'
     DeviceListResult:
       type: object
+      description: The array may be empty. Each element is a cloud device record.
       properties:
         deviceList:
           type: array
@@ -513,14 +535,25 @@ components:
             $ref: '#/components/schemas/Device'
     Device:
       type: object
-      description: Device fields represented by the current go-tplink model. Unknown device types are retained.
+      description: >-
+        Cloud device record. The client retains records with unknown deviceType
+        values, but its Go model does not retain fields outside those listed here.
       properties:
         deviceType:
           type: string
+          description: >-
+            The client classifies the known plug and bulb values below; other
+            values remain valid and are classified as Other.
+          x-extensible-enum:
+            - IOT.SMARTPLUGSWITCH
+            - IOT.RANGEEXTENDER.SMARTPLUG
+            - IOT.SMARTBULB
         deviceId:
           type: string
+          description: Pass this value as params.deviceId for passthrough commands.
         alias:
           type: string
+          description: Display name shown to the user.
         deviceModel:
           type: string
         deviceMac:
@@ -542,14 +575,18 @@ components:
           type: string
         status:
           type: integer
+          description: Cloud-reported status; interpretation may vary by device.
         isSameRegion:
           type: boolean
         is_dimmable:
           type: integer
+          description: Cloud-reported capability flag; 1 indicates dimming support.
         is_color:
           type: integer
+          description: Cloud-reported capability flag; 1 indicates color support.
         is_variable_color_temp:
           type: integer
+          description: Cloud-reported capability flag; 1 indicates color temperature support.
         brightness:
           type: integer
       additionalProperties: true
@@ -565,11 +602,13 @@ components:
       properties:
         responseData:
           type: string
-          description: |
-            JSON-encoded device response. After decoding, its known shapes are described by PassthroughCommandResult. Device errors may also appear at the top level.
-          example: '{"system":{"get_sysinfo":{"relay_state":1,"on_time":3600,"err_code":0}}}'
-          x-embedded-json-schema:
+          contentMediaType: application/json
+          contentSchema:
             $ref: '#/components/schemas/PassthroughCommandResult'
+          description: |
+            JSON-encoded device response. Decode the string to interpret
+            PassthroughCommandResult. Device errors may also appear at the top level.
+          example: '{"system":{"get_sysinfo":{"relay_state":1,"on_time":3600,"err_code":0}}}'
     PassthroughCommandResult:
       description: Inner JSON value after decoding result.responseData.
       anyOf:
@@ -609,6 +648,7 @@ components:
       properties:
         err_code:
           type: integer
+          description: Zero indicates success; -1 indicates an unsupported command in the implemented client.
         err_msg:
           type: string
       additionalProperties: true
@@ -619,6 +659,7 @@ components:
       properties:
         err_code:
           type: integer
+          description: Non-zero device-level error code; -1 indicates an unsupported command.
         err_msg:
           type: string
       additionalProperties: true

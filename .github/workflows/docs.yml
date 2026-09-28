@@ -30,11 +30,12 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - name: Generate Fumadocs API reference
-        uses: portpowered/api-docs-website-github-action@v0.2.0
+        uses: portpowered/api-docs-website-github-action@v0.3.0
         with:
           title: go-tplink API Reference
           openapi: api/openapi.yaml
           discover: false
+          guides-directory: docs/site
           base-path: /go-tplink
           output: site
       - uses: actions/setup-go@v5
