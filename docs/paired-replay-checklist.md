@@ -2,8 +2,8 @@
 
 This checklist applies item 15 of the shared library standard to TP-Link.
 Synthetic replay verifies the implementation contract and is not captured
-provider evidence. The [independent review](paired-replay-review.md) was made
-at `860e876`; it must be repeated at the final commit.
+provider evidence. The [independent review](paired-replay-review.md) re-audited
+all previous findings at implementation commit `2298ea5`.
 
 - [x] Store expected outbound method, origin, escaped path, query policy,
   relevant headers, and complete JSON body variants with each response in all
@@ -20,5 +20,7 @@ at `860e876`; it must be repeated at the final commit.
 - [x] Fixtures require the exact synthetic token `test-token`; tests using
   other synthetic tokens declare their exact expected value per step. The
   request-mismatch test rejects empty and wrong nonempty tokens.
-- [ ] Have the independent reviewer recheck the final commit and sign off
-  item 15 only after all findings above are resolved.
+- [x] Have the independent reviewer recheck the final implementation commit
+  and sign off item 15 after all findings above are resolved. The review
+  counted 15 normal files with 22 body variants and 33 stored failure/fault
+  pairs; fresh `make lint`, `make check`, and race replay tests passed.
