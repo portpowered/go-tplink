@@ -1,0 +1,501 @@
+openapi: 3.1.0
+info:
+  title: go-tplink public client models
+  version: 0.1.0
+  description: >-
+    Public Go model shapes used by go-tplink callers. These schemas describe
+    client inputs and projections, not TP-Link Cloud wire envelopes. Provider
+    wire models are defined separately in openapi.yaml.
+paths: {}
+components:
+  schemas:
+    AuthContext:
+      type: object
+      description: Authentication supplied for one account request.
+      properties:
+        AccessToken:
+          type: string
+          writeOnly: true
+          x-go-name: AccessToken
+          x-go-type-skip-optional-pointer: true
+
+    LoginRequest:
+      type: object
+      description: Account credentials used to create a cloud session.
+      properties:
+        Email:
+          type: string
+          x-go-name: Email
+          x-go-type-skip-optional-pointer: true
+        Password:
+          type: string
+          writeOnly: true
+          x-go-name: Password
+          x-go-type-skip-optional-pointer: true
+
+    GetDevicesRequest:
+      type: object
+      description: Identifies the account whose devices should be listed.
+      properties:
+        Auth:
+          $ref: '#/components/schemas/AuthContext'
+          x-go-name: Auth
+          x-go-type-skip-optional-pointer: true
+
+    GetDevicesResult:
+      type: object
+      description: Devices returned by the cloud account.
+      properties:
+        Devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+          x-go-name: Devices
+          x-go-type-skip-optional-pointer: true
+
+    TurnOnRequest:
+      type: object
+      description: Identifies a device to turn on.
+      properties:
+        Auth:
+          $ref: '#/components/schemas/AuthContext'
+          x-go-name: Auth
+          x-go-type-skip-optional-pointer: true
+        DeviceID:
+          type: string
+          x-go-name: DeviceID
+          x-go-type-skip-optional-pointer: true
+
+    TurnOffRequest:
+      type: object
+      description: Identifies a device to turn off.
+      properties:
+        Auth:
+          $ref: '#/components/schemas/AuthContext'
+          x-go-name: Auth
+          x-go-type-skip-optional-pointer: true
+        DeviceID:
+          type: string
+          x-go-name: DeviceID
+          x-go-type-skip-optional-pointer: true
+
+    GetPowerStateRequest:
+      type: object
+      description: Identifies a device whose power state should be read.
+      properties:
+        Auth:
+          $ref: '#/components/schemas/AuthContext'
+          x-go-name: Auth
+          x-go-type-skip-optional-pointer: true
+        DeviceID:
+          type: string
+          x-go-name: DeviceID
+          x-go-type-skip-optional-pointer: true
+
+    RebootRequest:
+      type: object
+      description: Identifies a device to reboot.
+      properties:
+        Auth:
+          $ref: '#/components/schemas/AuthContext'
+          x-go-name: Auth
+          x-go-type-skip-optional-pointer: true
+        DeviceID:
+          type: string
+          x-go-name: DeviceID
+          x-go-type-skip-optional-pointer: true
+
+    SetBrightnessRequest:
+      type: object
+      description: Specifies a bulb brightness from 0 through 100.
+      properties:
+        Auth:
+          $ref: '#/components/schemas/AuthContext'
+          x-go-name: Auth
+          x-go-type-skip-optional-pointer: true
+        DeviceID:
+          type: string
+          x-go-name: DeviceID
+          x-go-type-skip-optional-pointer: true
+        Brightness:
+          type: integer
+          x-go-name: Brightness
+          x-go-type-skip-optional-pointer: true
+
+    SetColorTempRequest:
+      type: object
+      description: Specifies a bulb color temperature in Kelvin.
+      properties:
+        Auth:
+          $ref: '#/components/schemas/AuthContext'
+          x-go-name: Auth
+          x-go-type-skip-optional-pointer: true
+        DeviceID:
+          type: string
+          x-go-name: DeviceID
+          x-go-type-skip-optional-pointer: true
+        ColorTemp:
+          type: integer
+          x-go-name: ColorTemp
+          x-go-type-skip-optional-pointer: true
+
+    SetColorRequest:
+      type: object
+      description: Specifies a bulb hue and saturation.
+      properties:
+        Auth:
+          $ref: '#/components/schemas/AuthContext'
+          x-go-name: Auth
+          x-go-type-skip-optional-pointer: true
+        DeviceID:
+          type: string
+          x-go-name: DeviceID
+          x-go-type-skip-optional-pointer: true
+        Hue:
+          type: integer
+          x-go-name: Hue
+          x-go-type-skip-optional-pointer: true
+        Saturation:
+          type: integer
+          x-go-name: Saturation
+          x-go-type-skip-optional-pointer: true
+
+    SetLightStateRequest:
+      type: object
+      description: Specifies arbitrary transition_light_state parameters.
+      properties:
+        Auth:
+          $ref: '#/components/schemas/AuthContext'
+          x-go-name: Auth
+          x-go-type-skip-optional-pointer: true
+        DeviceID:
+          type: string
+          x-go-name: DeviceID
+          x-go-type-skip-optional-pointer: true
+        State:
+          type: object
+          additionalProperties: true
+          description: State fields sent to the device, including fields not listed here.
+          x-go-name: State
+          x-go-type-skip-optional-pointer: true
+
+    GetLightStateRequest:
+      type: object
+      description: Identifies a bulb whose state should be read.
+      properties:
+        Auth:
+          $ref: '#/components/schemas/AuthContext'
+          x-go-name: Auth
+          x-go-type-skip-optional-pointer: true
+        DeviceID:
+          type: string
+          x-go-name: DeviceID
+          x-go-type-skip-optional-pointer: true
+
+    GetBrightnessRequest:
+      type: object
+      description: Identifies a bulb whose brightness should be read.
+      properties:
+        Auth:
+          $ref: '#/components/schemas/AuthContext'
+          x-go-name: Auth
+          x-go-type-skip-optional-pointer: true
+        DeviceID:
+          type: string
+          x-go-name: DeviceID
+          x-go-type-skip-optional-pointer: true
+
+    BrightnessResult:
+      type: object
+      description: A bulb's current brightness from 0 through 100.
+      properties:
+        Brightness:
+          type: integer
+          x-go-name: Brightness
+          x-go-type-skip-optional-pointer: true
+
+    GetColorTempRequest:
+      type: object
+      description: Identifies a bulb whose color temperature should be read.
+      properties:
+        Auth:
+          $ref: '#/components/schemas/AuthContext'
+          x-go-name: Auth
+          x-go-type-skip-optional-pointer: true
+        DeviceID:
+          type: string
+          x-go-name: DeviceID
+          x-go-type-skip-optional-pointer: true
+
+    ColorTempResult:
+      type: object
+      description: A bulb's current color temperature in Kelvin.
+      properties:
+        ColorTemp:
+          type: integer
+          x-go-name: ColorTemp
+          x-go-type-skip-optional-pointer: true
+
+    GetColorRequest:
+      type: object
+      description: Identifies a bulb whose hue and saturation should be read.
+      properties:
+        Auth:
+          $ref: '#/components/schemas/AuthContext'
+          x-go-name: Auth
+          x-go-type-skip-optional-pointer: true
+        DeviceID:
+          type: string
+          x-go-name: DeviceID
+          x-go-type-skip-optional-pointer: true
+
+    ColorResult:
+      type: object
+      description: A bulb's current hue and saturation.
+      properties:
+        Hue:
+          type: integer
+          x-go-name: Hue
+          x-go-type-skip-optional-pointer: true
+        Saturation:
+          type: integer
+          x-go-name: Saturation
+          x-go-type-skip-optional-pointer: true
+
+    SetAliasRequest:
+      type: object
+      description: Specifies the display name for a device.
+      properties:
+        Auth:
+          $ref: '#/components/schemas/AuthContext'
+          x-go-name: Auth
+          x-go-type-skip-optional-pointer: true
+        DeviceID:
+          type: string
+          x-go-name: DeviceID
+          x-go-type-skip-optional-pointer: true
+        Alias:
+          type: string
+          x-go-name: Alias
+          x-go-type-skip-optional-pointer: true
+
+    LoginResult:
+      type: object
+      description: Fields returned after successful authentication.
+      properties:
+        accountId:
+          type: string
+          x-go-name: AccountID
+          x-go-type-skip-optional-pointer: true
+        token:
+          type: string
+          description: Opaque session token for subsequent authenticated requests.
+          x-go-name: Token
+          x-go-type-skip-optional-pointer: true
+        email:
+          type: string
+          x-go-name: Email
+          x-go-type-skip-optional-pointer: true
+        regTime:
+          type: string
+          x-go-name: RegTime
+          x-go-type-skip-optional-pointer: true
+        countryCode:
+          type: string
+          x-go-name: CountryCode
+          x-go-type-skip-optional-pointer: true
+
+    Device:
+      type: object
+      description: Device metadata exposed to callers by the client.
+      properties:
+        deviceType:
+          type: string
+          description: Unknown device types are retained and classify as Other.
+          x-go-name: DeviceType
+          x-go-type-skip-optional-pointer: true
+        deviceId:
+          type: string
+          x-go-name: DeviceID
+          x-go-type-skip-optional-pointer: true
+        alias:
+          type: string
+          x-go-name: Alias
+          x-go-type-skip-optional-pointer: true
+        deviceModel:
+          type: string
+          x-go-name: DeviceModel
+          x-go-type-skip-optional-pointer: true
+        deviceMac:
+          type: string
+          x-go-name: DeviceMac
+          x-go-type-skip-optional-pointer: true
+        fwVer:
+          type: string
+          x-go-name: FwVer
+          x-go-type-skip-optional-pointer: true
+        deviceHwVer:
+          type: string
+          x-go-name: DeviceHwVer
+          x-go-type-skip-optional-pointer: true
+        hwId:
+          type: string
+          x-go-name: HwID
+          x-go-type-skip-optional-pointer: true
+        fwId:
+          type: string
+          x-go-name: FwID
+          x-go-type-skip-optional-pointer: true
+        oemId:
+          type: string
+          x-go-name: OemID
+          x-go-type-skip-optional-pointer: true
+        appServerUrl:
+          type: string
+          format: uri
+          x-go-name: AppServerURL
+          x-go-type-skip-optional-pointer: true
+        deviceRegion:
+          type: string
+          x-go-name: DeviceRegion
+          x-go-type-skip-optional-pointer: true
+        status:
+          type: integer
+          x-go-name: Status
+          x-go-type-skip-optional-pointer: true
+        isSameRegion:
+          type: boolean
+          x-go-name: IsSameRegion
+          x-go-type-skip-optional-pointer: true
+        is_dimmable:
+          type: integer
+          x-go-name: IsDimmable
+          x-go-type-skip-optional-pointer: true
+        is_color:
+          type: integer
+          x-go-name: IsColor
+          x-go-type-skip-optional-pointer: true
+        is_variable_color_temp:
+          type: integer
+          x-go-name: IsVariableColor
+          x-go-type-skip-optional-pointer: true
+        brightness:
+          type: integer
+          x-go-name: Brightness
+          x-go-type-skip-optional-pointer: true
+
+    EndpointType:
+      type: string
+      description: Classification assigned to a device by ClassifyDevice.
+      enum:
+        - Plug
+        - Bulb
+        - Other
+      x-enum-varnames:
+        - EndpointTypePlug
+        - EndpointTypeBulb
+        - EndpointTypeOther
+
+    Capabilities:
+      type: object
+      description: Capabilities inferred from device metadata.
+      properties:
+        OnOff:
+          type: boolean
+          x-go-name: OnOff
+          x-go-type-skip-optional-pointer: true
+        Brightness:
+          type: boolean
+          x-go-name: Brightness
+          x-go-type-skip-optional-pointer: true
+        Color:
+          type: boolean
+          x-go-name: Color
+          x-go-type-skip-optional-pointer: true
+        ColorTemp:
+          type: boolean
+          x-go-name: ColorTemp
+          x-go-type-skip-optional-pointer: true
+
+    PowerState:
+      type: object
+      description: Power state projected from a plug's get_sysinfo response.
+      properties:
+        IsOn:
+          type: boolean
+          x-go-name: IsOn
+          x-go-type-skip-optional-pointer: true
+        OnTime:
+          type: integer
+          x-go-name: OnTime
+          x-go-type-skip-optional-pointer: true
+
+    SysInfo:
+      type: object
+      description: Parsed system information returned by a plug.
+      properties:
+        sw_ver:
+          type: string
+          x-go-name: SwVer
+          x-go-type-skip-optional-pointer: true
+        hw_ver:
+          type: string
+          x-go-name: HwVer
+          x-go-type-skip-optional-pointer: true
+        model:
+          type: string
+          x-go-name: Model
+          x-go-type-skip-optional-pointer: true
+        deviceId:
+          type: string
+          x-go-name: DeviceID
+          x-go-type-skip-optional-pointer: true
+        alias:
+          type: string
+          x-go-name: Alias
+          x-go-type-skip-optional-pointer: true
+        relay_state:
+          type: integer
+          x-go-name: RelayState
+          x-go-type-skip-optional-pointer: true
+        on_time:
+          type: integer
+          x-go-name: OnTime
+          x-go-type-skip-optional-pointer: true
+        err_code:
+          type: integer
+          x-go-name: ErrCode
+          x-go-type-skip-optional-pointer: true
+
+    LightState:
+      type: object
+      description: Current state returned by a smart bulb.
+      properties:
+        on_off:
+          type: integer
+          x-go-name: OnOff
+          x-go-type-skip-optional-pointer: true
+        brightness:
+          type: integer
+          x-go-name: Brightness
+          x-go-type-skip-optional-pointer: true
+        hue:
+          type: integer
+          x-go-name: Hue
+          x-go-type-skip-optional-pointer: true
+        saturation:
+          type: integer
+          x-go-name: Saturation
+          x-go-type-skip-optional-pointer: true
+        color_temp:
+          type: integer
+          x-go-name: ColorTemp
+          x-go-type-skip-optional-pointer: true
+        mode:
+          type: string
+          x-go-name: Mode
+          x-go-type-skip-optional-pointer: true
+        err_code:
+          type: integer
+          x-go-name: ErrCode
+          x-go-type-skip-optional-pointer: true

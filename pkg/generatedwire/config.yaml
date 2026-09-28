@@ -1,0 +1,6 @@
+package: generatedwire
+generate:
+  models: true
+output: pkg/generatedwire/models.gen.go
+output-options:
+  skip-prune: true

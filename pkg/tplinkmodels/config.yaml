@@ -1,0 +1,6 @@
+package: tplinkmodels
+generate:
+  models: true
+output: pkg/tplinkmodels/models.gen.go
+output-options:
+  skip-prune: true

@@ -1,14 +1,15 @@
 package tplink
 
-import "context"
+import (
+	"context"
+
+	"github.com/portpowered/go-tplink/pkg/generatedwire"
+)
 
 // SetAlias renames a device.
 func (client *Client) SetAlias(ctx context.Context, request SetAliasRequest) error {
-	cmd := map[string]any{
-		NamespaceSystem: map[string]any{
-			CmdSetDevAlias: map[string]any{"alias": request.Alias},
-		},
-	}
+	cmd := generatedwire.SystemSetDevAliasCommand{}
+	cmd.System.SetDevAlias.Alias = request.Alias
 	data, err := client.doPassthrough(ctx, "SetAlias", request.Auth, request.DeviceID, cmd)
 	if err != nil {
 		return err

@@ -293,6 +293,7 @@ components:
           description: Device identifier from the device-list result.
         requestData:
           type: string
+          x-go-type: string
           contentMediaType: application/json
           contentSchema:
             $ref: '#/components/schemas/PassthroughCommand'
@@ -602,6 +603,7 @@ components:
       properties:
         responseData:
           type: string
+          x-go-type: string
           contentMediaType: application/json
           contentSchema:
             $ref: '#/components/schemas/PassthroughCommandResult'

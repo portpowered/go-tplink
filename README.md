@@ -24,6 +24,10 @@ go get github.com/portpowered/go-tplink@v0.1.0
 The public client is in `github.com/portpowered/go-tplink/pkg/tplink`; provider
 models and typed errors are in
 `github.com/portpowered/go-tplink/pkg/tplinkmodels`.
+Request and result structs are generated from
+[`api/client-models.openapi.yaml`](api/client-models.openapi.yaml); cloud wire
+structs are generated separately from [`api/openapi.yaml`](api/openapi.yaml).
+Run `make generate-api` after changing either schema.
 
 ## Usage
 

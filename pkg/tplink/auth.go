@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/portpowered/go-tplink/pkg/generatedwire"
 	"github.com/portpowered/go-tplink/pkg/tplinkmodels"
 )
 
@@ -13,13 +14,13 @@ import (
 // This is the only method that does not require an auth token. The returned
 // token should be supplied through AuthContext on each subsequent request.
 func (client *Client) Login(ctx context.Context, request LoginRequest) (tplinkmodels.LoginResult, error) {
-	cloudReq := tplinkmodels.CloudRequest{
-		Method: MethodLogin,
-		Params: tplinkmodels.LoginParams{
-			AppType:       AppType,
+	cloudReq := generatedwire.LoginCloudRequest{
+		Method: generatedwire.Login,
+		Params: generatedwire.LoginParams{
+			AppType:       generatedwire.TapoAndroid,
 			CloudUserName: request.Email,
-			CloudPassword: request.Password,
-			TerminalUUID:  "go-tplink-client",
+			CloudPassword: &request.Password,
+			TerminalUUID:  generatedwire.GoTplinkClient,
 		},
 	}
 
@@ -32,10 +33,19 @@ func (client *Client) Login(ctx context.Context, request LoginRequest) (tplinkmo
 		return tplinkmodels.LoginResult{}, err
 	}
 
-	var loginResp tplinkmodels.LoginResponse
+	var loginResp generatedwire.LoginResponse
 	if err := json.Unmarshal(respBytes, &loginResp); err != nil {
 		return tplinkmodels.LoginResult{}, tplinkmodels.NewInvalidResponseError("Login", "failed to parse login response", err)
 	}
 
-	return loginResp.Result, nil
+	if loginResp.Result == nil {
+		return tplinkmodels.LoginResult{}, nil
+	}
+	return tplinkmodels.LoginResult{
+		AccountID:   valueOrZero(loginResp.Result.AccountId),
+		Token:       valueOrZero(loginResp.Result.Token),
+		Email:       valueOrZero(loginResp.Result.Email),
+		RegTime:     valueOrZero(loginResp.Result.RegTime),
+		CountryCode: valueOrZero(loginResp.Result.CountryCode),
+	}, nil
 }

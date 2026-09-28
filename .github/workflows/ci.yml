@@ -66,3 +66,19 @@ jobs:
           cache: true
       - name: Report public API compatibility
         run: go run ./tools/compatibility -policy report -base "$COMPAT_BASE" -module "$PUBLIC_MODULE" -packages "$PUBLIC_PACKAGES"
+
+  schema-generation:
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: 'off'
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - name: Regenerate API models
+        run: make generate-api
+      - name: Check generated models
+        run: git diff --exit-code -- pkg/generatedwire/models.gen.go pkg/tplinkmodels/models.gen.go

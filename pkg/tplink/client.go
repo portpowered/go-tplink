@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/portpowered/go-tplink/pkg/generatedwire"
 	"github.com/portpowered/go-tplink/pkg/tplinkmodels"
 )
 
@@ -137,7 +138,7 @@ func parseBaseURL(value string) (*url.URL, error) {
 func (client *Client) doCloudRequest(
 	ctx context.Context,
 	operation string,
-	cloudRequest tplinkmodels.CloudRequest,
+	cloudRequest any,
 	auth *AuthContext,
 ) ([]byte, error) {
 	request, err := client.newCloudHTTPRequest(ctx, cloudRequest, auth)
@@ -149,7 +150,7 @@ func (client *Client) doCloudRequest(
 
 func (client *Client) newCloudHTTPRequest(
 	ctx context.Context,
-	cloudRequest tplinkmodels.CloudRequest,
+	cloudRequest any,
 	auth *AuthContext,
 ) (*http.Request, error) {
 	if client == nil {
@@ -255,25 +256,27 @@ func redactURL(value string) string {
 }
 
 func checkCloudError(data []byte, operation string) error {
-	var response tplinkmodels.CloudResponse
+	var response generatedwire.CloudResponse
 	if err := json.Unmarshal(data, &response); err != nil {
 		return tplinkmodels.NewInvalidResponseError(operation, "failed to parse cloud response", err)
 	}
-	if response.ErrorCode == 0 {
+	errorCode := valueOrZero(response.ErrorCode)
+	if errorCode == 0 {
 		return nil
 	}
+	message := valueOrZero(response.Msg)
 
-	switch response.ErrorCode {
+	switch errorCode {
 	case -20004:
-		return tplinkmodels.NewRateLimitError(response.Msg)
+		return tplinkmodels.NewRateLimitError(message)
 	case -20651:
-		return tplinkmodels.NewTokenExpiredError(response.Msg)
+		return tplinkmodels.NewTokenExpiredError(message)
 	case -20104:
-		return tplinkmodels.NewParameterError(response.Msg)
+		return tplinkmodels.NewParameterError(message)
 	case -20601:
-		return tplinkmodels.NewAuthenticationError(response.Msg, response.ErrorCode)
+		return tplinkmodels.NewAuthenticationError(message, errorCode)
 	default:
-		return tplinkmodels.NewCloudAPIError(response.ErrorCode, response.Msg)
+		return tplinkmodels.NewCloudAPIError(errorCode, message)
 	}
 }
 
@@ -288,10 +291,10 @@ func (client *Client) doPassthrough(
 	if err != nil {
 		return nil, tplinkmodels.NewInvalidRequestError("failed to marshal device command", err)
 	}
-	cloudRequest := tplinkmodels.CloudRequest{
-		Method: MethodPassthrough,
-		Params: tplinkmodels.PassthroughParams{
-			DeviceID:    deviceID,
+	cloudRequest := generatedwire.PassthroughCloudRequest{
+		Method: generatedwire.Passthrough,
+		Params: generatedwire.PassthroughParams{
+			DeviceId:    deviceID,
 			RequestData: string(commandBytes),
 		},
 	}
@@ -303,23 +306,32 @@ func (client *Client) doPassthrough(
 		return nil, err
 	}
 
-	var response tplinkmodels.PassthroughResponse
+	var response generatedwire.PassthroughResponse
 	if err := json.Unmarshal(responseBytes, &response); err != nil {
 		return nil, tplinkmodels.NewInvalidResponseError(operation, "failed to parse passthrough response", err)
 	}
-	return []byte(response.Result.ResponseData), nil
+	responseData := ""
+	if response.Result != nil {
+		responseData = valueOrZero(response.Result.ResponseData)
+	}
+	return []byte(responseData), nil
 }
 
 func checkDeviceError(data []byte) error {
-	var response struct {
-		ErrCode int    `json:"err_code"`
-		ErrMsg  string `json:"err_msg"`
-	}
+	var response generatedwire.DeviceCommandError
 	if err := json.Unmarshal(data, &response); err == nil && response.ErrCode != 0 {
 		if response.ErrCode == -1 {
-			return tplinkmodels.NewUnsupportedOperationError(response.ErrMsg)
+			return tplinkmodels.NewUnsupportedOperationError(valueOrZero(response.ErrMsg))
 		}
-		return tplinkmodels.NewDeviceError(response.ErrCode, response.ErrMsg)
+		return tplinkmodels.NewDeviceError(response.ErrCode, valueOrZero(response.ErrMsg))
 	}
 	return nil
+}
+
+func valueOrZero[T any](value *T) T {
+	if value == nil {
+		var zero T
+		return zero
+	}
+	return *value
 }
