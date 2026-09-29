@@ -38,5 +38,3 @@ linters:
       # Keep the built-in debug print functions forbidden.
       forbid:
         - pattern: ^print(ln)?$
-  exclusions:
-    generated: strict
