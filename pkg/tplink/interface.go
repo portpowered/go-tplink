@@ -8,6 +8,8 @@ import (
 
 // ClientInterface defines the contract for the TP-Link Cloud API client.
 // Used for dependency injection and mocking in tests.
+//
+//nolint:interfacebloat // One method per supported provider operation keeps the interface useful to callers.
 type ClientInterface interface {
 	// Auth
 	Login(ctx context.Context, request LoginRequest) (tplinkmodels.LoginResult, error)

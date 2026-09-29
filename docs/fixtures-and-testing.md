@@ -46,9 +46,13 @@ Run these from the repository root:
 | Build | `make build` | No | Builds all module packages |
 | Test | `make test` | No | Runs `go test -race ./...`; use only synthetic/offline test data |
 | Format | `make fmt` | No | Runs `go fmt ./...` |
-| Vet | `make lint` | No | The current lint target runs `go vet ./...` |
+| Lint | `make lint` | No | Runs golangci-lint v2.3.0 with every linter enabled by `linters.default: all` |
 | Combined check | `make check` | No | Runs lint, build, and test |
 | API compatibility report | `make api-compatibility` | No | Compares exported API with the previous release when one exists |
+
+The CI workflow installs golangci-lint v2.3.0 and runs the full-repository
+lint command as a blocking job. The configuration does not disable
+linters or filter findings through a baseline.
 
 ## Replay coverage
 

@@ -1,4 +1,5 @@
 GO ?= go
+GOLANGCI_LINT ?= golangci-lint
 export GOWORK := off
 PUBLIC_MODULE ?= github.com/portpowered/go-tplink
 PUBLIC_PACKAGES ?= pkg/tplink,pkg/tplinkmodels
@@ -15,7 +16,7 @@ test:
 	$(GO) test -race ./...
 
 lint:
-	$(GO) vet ./...
+	$(GOLANGCI_LINT) run ./...
 
 replay-coverage:
 	$(GO) run ./tools/replaycoverage

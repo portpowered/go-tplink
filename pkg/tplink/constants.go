@@ -18,7 +18,7 @@ const (
 	MethodPassthrough   = "passthrough"
 )
 
-// App type identifier sent during login.
+// AppType is the identifier sent during login.
 const AppType = "Tapo_Android"
 
 // Passthrough command namespaces.

@@ -1,3 +1,4 @@
+// Package main lists devices from a TP-Link Kasa Cloud account.
 package main
 
 import (
@@ -12,8 +13,17 @@ import (
 	"github.com/portpowered/go-tplink/pkg/tplinkmodels"
 )
 
+const loginTimeout = 20 * time.Second
+
+var (
+	errMissingCredentials  = errors.New("TP_LINK_EMAIL and TP_LINK_PASSWORD are required")
+	errCredentialsRejected = errors.New("TP-Link rejected the supplied credentials")
+	errSessionExpired      = errors.New("TP-Link session expired; run the example again to sign in")
+)
+
 func main() {
-	if err := run(); err != nil {
+	err := run()
+	if err != nil {
 		log.Print(err)
 		os.Exit(1)
 	}
@@ -22,10 +32,30 @@ func main() {
 func run() error {
 	email := os.Getenv("TP_LINK_EMAIL")
 	password := os.Getenv("TP_LINK_PASSWORD")
+
 	if email == "" || password == "" {
-		return errors.New("TP_LINK_EMAIL and TP_LINK_PASSWORD are required")
+		return errMissingCredentials
 	}
 
+	client, err := newClientFromEnvironment()
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		err := client.Close()
+		if err != nil {
+			log.Printf("close TP-Link client: %v", err)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), loginTimeout)
+	defer cancel()
+
+	return listAndPrintDevices(ctx, client, email, password)
+}
+
+func newClientFromEnvironment() (*tplink.Client, error) {
 	var options []tplink.Option
 	if baseURL := os.Getenv("TP_LINK_BASE_URL"); baseURL != "" {
 		options = append(options, tplink.WithBaseURL(baseURL))
@@ -33,17 +63,13 @@ func run() error {
 
 	client, err := tplink.NewClient(options...)
 	if err != nil {
-		return fmt.Errorf("create TP-Link client: %w", err)
+		return nil, fmt.Errorf("create TP-Link client: %w", err)
 	}
-	defer func() {
-		if err := client.Close(); err != nil {
-			log.Printf("close TP-Link client: %v", err)
-		}
-	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
+	return client, nil
+}
 
+func listAndPrintDevices(ctx context.Context, client *tplink.Client, email, password string) error {
 	session, err := client.Login(ctx, tplink.LoginRequest{
 		Email:    email,
 		Password: password,
@@ -51,8 +77,9 @@ func run() error {
 	if err != nil {
 		var authErr *tplinkmodels.AuthenticationError
 		if errors.As(err, &authErr) {
-			return errors.New("TP-Link rejected the supplied credentials")
+			return errCredentialsRejected
 		}
+
 		return fmt.Errorf("TP-Link login failed: %w", err)
 	}
 
@@ -62,13 +89,15 @@ func run() error {
 	if err != nil {
 		var expired *tplinkmodels.TokenExpiredError
 		if errors.As(err, &expired) {
-			return errors.New("TP-Link session expired; run the example again to sign in")
+			return errSessionExpired
 		}
+
 		return fmt.Errorf("list TP-Link devices: %w", err)
 	}
 
 	for _, device := range result.Devices {
 		fmt.Printf("%s\t%s\t%s\n", device.DeviceType, device.DeviceModel, device.Alias)
 	}
+
 	return nil
 }

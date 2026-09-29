@@ -23,4 +23,6 @@ all previous findings at implementation commit `2298ea5`.
 - [x] Have the independent reviewer recheck the final implementation commit
   and sign off item 15 after all findings above are resolved. The review
   counted 15 normal files with 22 body variants and 33 stored failure/fault
-  pairs; fresh `make lint`, `make check`, and race replay tests passed.
+  pairs; the historical `make lint`, `make check`, and race replay tests passed
+  under the toolchain in use at `2298ea5`. The later all-linter CI migration
+  requires separate verification on its own final commit.

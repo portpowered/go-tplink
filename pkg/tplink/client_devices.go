@@ -19,19 +19,29 @@ func (client *Client) GetDevices(ctx context.Context, request GetDevicesRequest)
 		return GetDevicesResult{}, err
 	}
 
-	if err := checkCloudError(respBytes, "GetDevices"); err != nil {
+	err = checkCloudError(respBytes, "GetDevices")
+	if err != nil {
 		return GetDevicesResult{}, err
 	}
 
 	var devResp generatedwire.DeviceListResponse
-	if err := json.Unmarshal(respBytes, &devResp); err != nil {
-		return GetDevicesResult{}, tplinkmodels.NewInvalidResponseError("GetDevices", "failed to parse device list response", err)
+
+	decodeErr := json.Unmarshal(respBytes, &devResp)
+	if decodeErr != nil {
+		return GetDevicesResult{}, tplinkmodels.NewInvalidResponseError(
+			"GetDevices",
+			"failed to parse device list response",
+			decodeErr,
+		)
 	}
 
 	var devices []tplinkmodels.Device
+
 	if devResp.Result != nil && devResp.Result.DeviceList != nil {
 		wireDevices := *devResp.Result.DeviceList
+
 		devices = make([]tplinkmodels.Device, len(wireDevices))
+
 		for index, device := range wireDevices {
 			devices[index] = tplinkmodels.Device{
 				DeviceType:      valueOrZero(device.DeviceType),
@@ -55,5 +65,6 @@ func (client *Client) GetDevices(ctx context.Context, request GetDevicesRequest)
 			}
 		}
 	}
+
 	return GetDevicesResult{Devices: devices}, nil
 }

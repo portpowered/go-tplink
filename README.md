@@ -117,10 +117,14 @@ Run commands from the module root:
 | Build | `make build` | No |
 | Test | `make test` | No |
 | Format | `make fmt` | No |
-| Vet | `make lint` | No |
+| Lint | `make lint` | No |
 | Combined checks | `make check` | No |
 | Replay coverage | `make replay-coverage` | No |
 | API compatibility report | `make api-compatibility` | No |
+
+`make lint` uses golangci-lint v2.3.0 with `linters.default: all` from
+[`.golangci.yml`](.golangci.yml). CI runs the same full-repository lint command
+with that pinned version as a blocking check.
 
 The [shared API Docs action](https://github.com/portpowered/api-docs-website-github-action)
 generates the Fumadocs website from the checked-in [OpenAPI contract](api/openapi.yaml).

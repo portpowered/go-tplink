@@ -29,18 +29,27 @@ func (client *Client) Login(ctx context.Context, request LoginRequest) (tplinkmo
 		return tplinkmodels.LoginResult{}, err
 	}
 
-	if err := checkCloudError(respBytes, "Login"); err != nil {
+	err = checkCloudError(respBytes, "Login")
+	if err != nil {
 		return tplinkmodels.LoginResult{}, err
 	}
 
 	var loginResp generatedwire.LoginResponse
-	if err := json.Unmarshal(respBytes, &loginResp); err != nil {
-		return tplinkmodels.LoginResult{}, tplinkmodels.NewInvalidResponseError("Login", "failed to parse login response", err)
+
+	err = json.Unmarshal(respBytes, &loginResp)
+	if err != nil {
+		return tplinkmodels.LoginResult{}, tplinkmodels.NewInvalidResponseError(
+			"Login",
+			"failed to parse login response",
+			err,
+		)
 	}
 
 	if loginResp.Result == nil {
+		//nolint:exhaustruct // A missing provider result maps to the zero public result.
 		return tplinkmodels.LoginResult{}, nil
 	}
+
 	return tplinkmodels.LoginResult{
 		AccountID:   valueOrZero(loginResp.Result.AccountId),
 		Token:       valueOrZero(loginResp.Result.Token),

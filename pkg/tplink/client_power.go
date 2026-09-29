@@ -10,47 +10,66 @@ import (
 
 // TurnOn turns on a plug device by setting relay_state to 1.
 func (client *Client) TurnOn(ctx context.Context, request TurnOnRequest) error {
-	cmd := generatedwire.SystemSetRelayStateCommand{}
+	var cmd generatedwire.SystemSetRelayStateCommand
+
 	cmd.System.SetRelayState.State = generatedwire.SystemSetRelayStateCommandSystemSetRelayStateStateN1
+
 	data, err := client.doPassthrough(ctx, "TurnOn", request.Auth, request.DeviceID, cmd)
 	if err != nil {
 		return err
 	}
+
 	return checkPassthroughCommandError(data, NamespaceSystem, CmdSetRelayState, "TurnOn")
 }
 
 // TurnOff turns off a plug device by setting relay_state to 0.
 func (client *Client) TurnOff(ctx context.Context, request TurnOffRequest) error {
-	cmd := generatedwire.SystemSetRelayStateCommand{}
+	var cmd generatedwire.SystemSetRelayStateCommand
+
 	cmd.System.SetRelayState.State = generatedwire.SystemSetRelayStateCommandSystemSetRelayStateStateN0
+
 	data, err := client.doPassthrough(ctx, "TurnOff", request.Auth, request.DeviceID, cmd)
 	if err != nil {
 		return err
 	}
+
 	return checkPassthroughCommandError(data, NamespaceSystem, CmdSetRelayState, "TurnOff")
 }
 
 // GetPowerState retrieves the power state of a plug device via get_sysinfo.
-func (client *Client) GetPowerState(ctx context.Context, request GetPowerStateRequest) (tplinkmodels.PowerState, error) {
-	cmd := generatedwire.SystemGetSysInfoCommand{}
+func (client *Client) GetPowerState(
+	ctx context.Context,
+	request GetPowerStateRequest,
+) (tplinkmodels.PowerState, error) {
+	var cmd generatedwire.SystemGetSysInfoCommand
+
 	cmd.System.GetSysinfo = generatedwire.SystemGetSysInfoCommandSystemGetSysinfoEmpty
+
 	data, err := client.doPassthrough(ctx, "GetPowerState", request.Auth, request.DeviceID, cmd)
 	if err != nil {
 		return tplinkmodels.PowerState{}, err
 	}
 
-	if _, err := passthroughCommandResult(data, NamespaceSystem, CmdGetSysInfo, "GetPowerState"); err != nil {
+	_, err = passthroughCommandResult(data, NamespaceSystem, CmdGetSysInfo, "GetPowerState")
+	if err != nil {
 		return tplinkmodels.PowerState{}, err
 	}
 
 	var parsed generatedwire.SystemCommandResult
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return tplinkmodels.PowerState{}, tplinkmodels.NewInvalidResponseError("GetPowerState", "failed to parse sysinfo response", err)
+
+	decodeErr := json.Unmarshal(data, &parsed)
+	if decodeErr != nil {
+		return tplinkmodels.PowerState{}, tplinkmodels.NewInvalidResponseError(
+			"GetPowerState",
+			"failed to parse sysinfo response",
+			decodeErr,
+		)
 	}
 
 	if parsed.System == nil || parsed.System.GetSysinfo == nil {
 		return tplinkmodels.PowerState{}, tplinkmodels.NewInvalidResponseError("GetPowerState", "missing sysinfo result", nil)
 	}
+
 	sysInfo := parsed.System.GetSysinfo
 	if errCode := valueOrZero(sysInfo.ErrCode); errCode != 0 {
 		return tplinkmodels.PowerState{}, tplinkmodels.NewDeviceError(errCode, "get_sysinfo failed")
@@ -64,12 +83,15 @@ func (client *Client) GetPowerState(ctx context.Context, request GetPowerStateRe
 
 // Reboot reboots a plug device after a 1-second delay.
 func (client *Client) Reboot(ctx context.Context, request RebootRequest) error {
-	cmd := generatedwire.SystemRebootCommand{}
+	var cmd generatedwire.SystemRebootCommand
+
 	cmd.System.Reboot.Delay = generatedwire.SystemRebootCommandSystemRebootDelayN1
+
 	data, err := client.doPassthrough(ctx, "Reboot", request.Auth, request.DeviceID, cmd)
 	if err != nil {
 		return err
 	}
+
 	return checkPassthroughCommandError(data, NamespaceSystem, CmdReboot, "Reboot")
 }
 
@@ -82,8 +104,10 @@ func checkPassthroughCommandError(data []byte, namespace, command, operation str
 	}
 
 	var result generatedwire.CommandAcknowledgement
-	if err := json.Unmarshal(cmdData, &result); err != nil {
-		return tplinkmodels.NewInvalidResponseError(operation, "failed to parse passthrough command result", err)
+
+	decodeErr := json.Unmarshal(cmdData, &result)
+	if decodeErr != nil {
+		return tplinkmodels.NewInvalidResponseError(operation, "failed to parse passthrough command result", decodeErr)
 	}
 
 	errCode := valueOrZero(result.ErrCode)
@@ -92,6 +116,7 @@ func checkPassthroughCommandError(data []byte, namespace, command, operation str
 		if errCode == -1 {
 			return tplinkmodels.NewUnsupportedOperationError(errMsg)
 		}
+
 		return tplinkmodels.NewDeviceError(errCode, errMsg)
 	}
 
@@ -99,23 +124,27 @@ func checkPassthroughCommandError(data []byte, namespace, command, operation str
 }
 
 func passthroughCommandResult(data []byte, namespace, command, operation string) (json.RawMessage, error) {
-	if err := checkDeviceError(data); err != nil {
+	err := checkDeviceError(data)
+	if err != nil {
 		return nil, err
 	}
 
 	var parsed map[string]map[string]json.RawMessage
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return nil, tplinkmodels.NewInvalidResponseError(operation, "failed to parse passthrough command response", err)
+
+	decodeErr := json.Unmarshal(data, &parsed)
+	if decodeErr != nil {
+		return nil, tplinkmodels.NewInvalidResponseError(operation, "failed to parse passthrough command response", decodeErr)
 	}
 
-	ns, ok := parsed[namespace]
-	if !ok {
+	namespaceResult, found := parsed[namespace]
+	if !found {
 		return nil, tplinkmodels.NewInvalidResponseError(operation, "missing passthrough namespace", nil)
 	}
 
-	cmdData, ok := ns[command]
-	if !ok || len(cmdData) == 0 || string(cmdData) == "null" {
+	cmdData, found := namespaceResult[command]
+	if !found || len(cmdData) == 0 || string(cmdData) == "null" {
 		return nil, tplinkmodels.NewInvalidResponseError(operation, "missing passthrough command result", nil)
 	}
+
 	return cmdData, nil
 }

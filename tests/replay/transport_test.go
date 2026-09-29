@@ -49,14 +49,14 @@ type storedOutcome struct {
 	Response  struct {
 		Status     int                 `json:"status"`
 		Headers    map[string][]string `json:"headers"`
-		BodyText   string              `json:"body_text,omitempty"`
+		BodyText   string              `json:"body_text,omitempty"` //nolint:tagliatelle,lll // Stored fixture schema uses snake_case keys.
 		BodyRepeat *struct {
 			Text  string `json:"text"`
 			Count int    `json:"count"`
-		} `json:"body_repeat,omitempty"`
-		TransportError string `json:"transport_error,omitempty"`
+		} `json:"body_repeat,omitempty"` //nolint:tagliatelle // Stored fixture schema uses snake_case keys.
+		TransportError string `json:"transport_error,omitempty"` //nolint:tagliatelle,lll // Stored fixture schema uses snake_case keys.
 		Fault          string `json:"fault,omitempty"`
-		ErrorURL       string `json:"error_url,omitempty"`
+		ErrorURL       string `json:"error_url,omitempty"` //nolint:tagliatelle // Stored fixture schema uses snake_case keys.
 	} `json:"response"`
 }
 
@@ -80,26 +80,68 @@ type replayStep struct {
 	faultBody      io.ReadCloser
 }
 
+type replayAttempt struct {
+	requestBody []byte
+	key         string
+	stepIndex   int
+	step        replayStep
+}
+
+type replayDiagnosticError string
+
+const storedFaultResponseAndError = "response-and-error"
+
+func (err replayDiagnosticError) Error() string {
+	return string(err)
+}
+
+const (
+	errMissingRequestMethod replayDiagnosticError = "TP-Link request has no method"
+	errMissingDeviceCommand replayDiagnosticError = "TP-Link device request has no command"
+)
+
+func replayDiagnosticErrorf(format string, values ...any) error {
+	return replayDiagnosticError(fmt.Sprintf(format, values...))
+}
+
+type storedTransportFailureError string
+
+func (err storedTransportFailureError) Error() string {
+	return string(err)
+}
+
 func newReplayTransport() *replayTransport {
-	return &replayTransport{}
+	return new(replayTransport)
 }
 
 func (transport *replayTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	attempt, err := transport.prepareReplayAttempt(request)
+	if err != nil {
+		return nil, err
+	}
+
+	return transport.completeReplayAttempt(request, attempt)
+}
+
+func (transport *replayTransport) prepareReplayAttempt(request *http.Request) (replayAttempt, error) {
 	var requestBody []byte
+
 	if request.Body != nil {
 		var err error
+
 		requestBody, err = io.ReadAll(request.Body)
 		if err != nil {
-			return nil, fmt.Errorf("read request body: %w", err)
+			return replayAttempt{}, fmt.Errorf("read request body: %w", err)
 		}
 	}
 
 	key, err := requestFixtureKey(requestBody)
 	if err != nil {
-		return nil, err
+		return replayAttempt{}, err
 	}
 
 	transport.mu.Lock()
+
 	transport.requests = append(transport.requests, recordedRequest{
 		Method: request.Method,
 		URL:    cloneURL(request.URL),
@@ -108,98 +150,221 @@ func (transport *replayTransport) RoundTrip(request *http.Request) (*http.Respon
 	})
 	if transport.matchedCalls >= len(transport.steps) {
 		transport.mu.Unlock()
-		return nil, fmt.Errorf("unexpected extra replay request for operation %q", key)
+
+		return replayAttempt{}, replayDiagnosticErrorf("unexpected extra replay request for operation %q", key)
 	}
-	stepIndex := transport.matchedCalls
-	step := transport.steps[stepIndex]
+
+	attempt := replayAttempt{
+		requestBody: requestBody,
+		key:         key,
+		stepIndex:   transport.matchedCalls,
+		step:        transport.steps[transport.matchedCalls],
+	}
 	transport.mu.Unlock()
-	if step.operation != key {
-		return nil, fmt.Errorf("replay operation %q is out of order; expected %q", key, step.operation)
+
+	if attempt.step.operation != key {
+		return replayAttempt{}, replayDiagnosticErrorf(
+			"replay operation %q is out of order; expected %q", key, attempt.step.operation,
+		)
 	}
-	var exchange fixtureExchange
-	fixturePath := step.fixture
+
+	return attempt, nil
+}
+
+func (transport *replayTransport) completeReplayAttempt(
+	request *http.Request,
+	attempt replayAttempt,
+) (*http.Response, error) {
+	exchange, fixturePath, err := loadReplayExchange(attempt.step, attempt.key)
+	if err != nil {
+		return nil, err
+	}
+
+	err = configureReplayRequest(&exchange, attempt.step)
+	if err != nil {
+		return nil, fmt.Errorf("replay fixture %q request mismatch: %w", fixturePath, err)
+	}
+
+	err = matchFixtureRequest(request, attempt.requestBody, attempt.key, exchange)
+	if err != nil {
+		return nil, fmt.Errorf("replay fixture %q request mismatch: %w", fixturePath, err)
+	}
+
+	err = transport.markAttemptMatched(attempt)
+	if err != nil {
+		return nil, err
+	}
+
+	return responseForReplayStep(attempt.step, exchange)
+}
+
+func loadReplayExchange(step replayStep, key string) (fixtureExchange, string, error) {
 	if step.outcome != nil {
-		fixturePath = "paired_outcomes.synthetic.json#" + step.outcome.ID
+		var exchange fixtureExchange
+
 		exchange.Request = step.outcome.Request
-	} else {
-		if fixturePath == "" {
-			fixturePath = step.operation
-		}
-		fixturePath = "fixtures/synthetic/synthetic_tplink_" + fixturePath + ".json"
-		fixtureBody, err := fixtureFiles.ReadFile(fixturePath)
-		if err != nil {
-			return nil, fmt.Errorf("no replay pair for TP-Link operation %q: %w", key, err)
-		}
-		if err := json.Unmarshal(fixtureBody, &exchange); err != nil {
-			return nil, fmt.Errorf("decode replay fixture %q: %w", fixturePath, err)
-		}
+
+		return exchange, "paired_outcomes.synthetic.json#" + step.outcome.ID, nil
 	}
+
+	fixturePath := step.fixture
+	if fixturePath == "" {
+		fixturePath = step.operation
+	}
+
+	fixturePath = "fixtures/synthetic/synthetic_tplink_" + fixturePath + ".json"
+
+	fixtureBody, err := fixtureFiles.ReadFile(fixturePath)
+	if err != nil {
+		return fixtureExchange{}, "", fmt.Errorf("no replay pair for TP-Link operation %q: %w", key, err)
+	}
+
+	var exchange fixtureExchange
+
+	decodeErr := json.Unmarshal(fixtureBody, &exchange)
+	if decodeErr != nil {
+		return fixtureExchange{}, "", fmt.Errorf("decode replay fixture %q: %w", fixturePath, decodeErr)
+	}
+
+	return exchange, fixturePath, nil
+}
+
+func configureReplayRequest(exchange *fixtureExchange, step replayStep) error {
 	if step.token != "" {
 		exchange.Request.Query["token"] = []string{step.token}
 	}
+
 	if step.variant < 0 || step.variant >= len(exchange.Request.Bodies) {
-		return nil, fmt.Errorf("fixture %q has no request variant %d", fixturePath, step.variant)
+		return replayDiagnosticErrorf("fixture has no request variant %d", step.variant)
 	}
+
 	exchange.Request.Bodies = exchange.Request.Bodies[step.variant : step.variant+1]
 	exchange.Request.Operations = []string{step.operation}
-	if err := matchFixtureRequest(request, requestBody, key, exchange); err != nil {
-		return nil, fmt.Errorf("replay fixture %q request mismatch: %w", fixturePath, err)
-	}
+
+	return nil
+}
+
+func (transport *replayTransport) markAttemptMatched(attempt replayAttempt) error {
 	transport.mu.Lock()
-	if transport.matchedCalls != stepIndex {
-		transport.mu.Unlock()
-		return nil, fmt.Errorf("duplicate or out-of-order concurrent replay request for operation %q", key)
+	defer transport.mu.Unlock()
+
+	if transport.matchedCalls != attempt.stepIndex {
+		return replayDiagnosticErrorf(
+			"duplicate or out-of-order concurrent replay request for operation %q", attempt.key,
+		)
 	}
+
 	transport.matchedCalls++
-	transport.mu.Unlock()
+
+	return nil
+}
+
+func responseForReplayStep(step replayStep, exchange fixtureExchange) (*http.Response, error) {
 	if step.outcome != nil {
-		switch step.outcome.Response.Fault {
-		case "nil-response":
-			return nil, nil
-		case "nil-body":
-			return &http.Response{StatusCode: step.outcome.Response.Status}, nil
-		case "read-error":
-			return &http.Response{StatusCode: step.outcome.Response.Status, Body: readErrorBody{}}, nil
-		case "response-and-error":
-			return &http.Response{StatusCode: step.outcome.Response.Status, Body: step.faultBody}, step.transportError
-		case "transport-error":
+		fault := responseForStoredFault(step)
+		if fault.handled {
+			return fault.response, fault.err
+		}
+
+		if step.outcome.Response.TransportError != "" {
 			return nil, step.transportError
-		case "url-error":
-			return nil, &url.Error{Op: "Post", URL: step.outcome.Response.ErrorURL, Err: step.transportError}
-		case "":
-		default:
-			return nil, fmt.Errorf("unknown replay fault %q", step.outcome.Response.Fault)
 		}
+
+		return responseForStoredOutcome(step.outcome), nil
 	}
-	if step.outcome != nil && step.outcome.Response.TransportError != "" {
-		return nil, step.transportError
-	}
-	if step.outcome != nil {
-		body := []byte(step.outcome.Response.BodyText)
-		if repeat := step.outcome.Response.BodyRepeat; repeat != nil {
-			body = []byte(strings.Repeat(repeat.Text, repeat.Count))
+
+	return newReplayHTTPResponse(
+		exchange.Response.Status,
+		http.Header(exchange.Response.Headers),
+		io.NopCloser(bytes.NewReader(exchange.Response.Body)),
+	), nil
+}
+
+type replayFaultResult struct {
+	response *http.Response
+	err      error
+	handled  bool
+}
+
+func responseForStoredFault(step replayStep) replayFaultResult {
+	switch step.outcome.Response.Fault {
+	case "nil-response":
+		return replayFaultResult{response: nil, err: nil, handled: true}
+	case "nil-body":
+		//nolint:bodyclose // This fault fixture intentionally returns a response with no body.
+		return replayFaultResult{
+			response: newReplayHTTPResponse(step.outcome.Response.Status, nil, nil),
+			err:      nil,
+			handled:  true,
 		}
-		return &http.Response{StatusCode: step.outcome.Response.Status, Header: http.Header(step.outcome.Response.Headers), Body: io.NopCloser(bytes.NewReader(body))}, nil
+	case "read-error":
+		return replayFaultResult{
+			//nolint:bodyclose // The replayed client owns and closes this response body.
+			response: newReplayHTTPResponse(step.outcome.Response.Status, nil, readErrorBody{}),
+			err:      nil,
+			handled:  true,
+		}
+	case storedFaultResponseAndError:
+		return replayFaultResult{
+			//nolint:bodyclose // The replayed client owns and closes this response body.
+			response: newReplayHTTPResponse(step.outcome.Response.Status, nil, step.faultBody),
+			err:      step.transportError,
+			handled:  true,
+		}
+	case "transport-error":
+		return replayFaultResult{response: nil, err: step.transportError, handled: true}
+	case "url-error":
+		return replayFaultResult{
+			response: nil,
+			err:      &url.Error{Op: "Post", URL: step.outcome.Response.ErrorURL, Err: step.transportError},
+			handled:  true,
+		}
+	case "":
+		return replayFaultResult{response: nil, err: nil, handled: false}
+	default:
+		err := replayDiagnosticErrorf("unknown replay fault %q", step.outcome.Response.Fault)
+
+		return replayFaultResult{response: nil, err: err, handled: true}
 	}
-	return &http.Response{
-		StatusCode: exchange.Response.Status,
-		Header:     http.Header(exchange.Response.Headers),
-		Body:       io.NopCloser(bytes.NewReader(exchange.Response.Body)),
-	}, nil
+}
+
+func responseForStoredOutcome(outcome *storedOutcome) *http.Response {
+	body := []byte(outcome.Response.BodyText)
+	if repeat := outcome.Response.BodyRepeat; repeat != nil {
+		body = []byte(strings.Repeat(repeat.Text, repeat.Count))
+	}
+
+	return newReplayHTTPResponse(
+		outcome.Response.Status,
+		http.Header(outcome.Response.Headers),
+		io.NopCloser(bytes.NewReader(body)),
+	)
+}
+
+func newReplayHTTPResponse(status int, header http.Header, body io.ReadCloser) *http.Response {
+	response := new(http.Response)
+	response.StatusCode = status
+	response.Header = header
+	response.Body = body
+
+	return response
 }
 
 func (transport *replayTransport) expectCalls(count int) {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
+
 	if count != 0 {
 		panic("use expectSequence for positive expected call counts")
 	}
+
 	transport.steps = nil
 }
 
 func (transport *replayTransport) expectSequence(operations ...string) {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
+
 	transport.steps = make([]replayStep, len(operations))
 	for i, operation := range operations {
 		transport.steps[i].operation = operation
@@ -209,90 +374,144 @@ func (transport *replayTransport) expectSequence(operations ...string) {
 func (transport *replayTransport) expectToken(index int, token string) {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
+
 	transport.steps[index].token = token
 }
 
-func (transport *replayTransport) expectVariant(index, variant int) {
+func (transport *replayTransport) expectVariant(variant int) {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
-	transport.steps[index].variant = variant
+
+	transport.steps[0].variant = variant
 }
 
 func (transport *replayTransport) assertConsumed() error {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
+
 	if transport.matchedCalls != len(transport.steps) {
-		return fmt.Errorf("matched %d of %d expected replay calls", transport.matchedCalls, len(transport.steps))
+		return replayDiagnosticErrorf("matched %d of %d expected replay calls", transport.matchedCalls, len(transport.steps))
 	}
+
 	return nil
 }
 
 func matchFixtureRequest(request *http.Request, body []byte, operation string, exchange fixtureExchange) error {
 	want := exchange.Request
-	if request.Method != want.Method || request.URL.Scheme+"://"+request.URL.Host != want.Origin || request.URL.EscapedPath() != want.Path {
-		return fmt.Errorf("got %s %s, want %s %s%s", request.Method, request.URL, want.Method, want.Origin, want.Path)
+	if request.Method != want.Method || request.URL.Scheme+"://"+request.URL.Host != want.Origin ||
+		request.URL.EscapedPath() != want.Path {
+		return replayDiagnosticErrorf(
+			"got %s %s, want %s %s%s",
+			request.Method,
+			request.URL,
+			want.Method,
+			want.Origin,
+			want.Path,
+		)
 	}
-	query := request.URL.Query()
-	if len(query) != len(want.Query) {
-		return fmt.Errorf("query = %v, want %v", query, want.Query)
+
+	err := matchFixtureQuery(request.URL.Query(), want.Query)
+	if err != nil {
+		return err
 	}
-	for name, values := range want.Query {
-		got := query[name]
-		if len(got) != len(values) {
-			return fmt.Errorf("query %s = %v, want %v", name, got, values)
+
+	err = matchFixtureHeaders(request.Header, want.Headers)
+	if err != nil {
+		return err
+	}
+
+	if !containsString(want.Operations, operation) {
+		return replayDiagnosticErrorf("operation %q is not in %v", operation, want.Operations)
+	}
+
+	return matchFixtureBody(body, want.Bodies)
+}
+
+func matchFixtureQuery(actual, expected url.Values) error {
+	if len(actual) != len(expected) {
+		return replayDiagnosticErrorf("query = %v, want %v", actual, expected)
+	}
+
+	for name, values := range expected {
+		err := compareFixtureValues("query", name, actual[name], values)
+		if err != nil {
+			return err
 		}
-		for i, value := range values {
-			if got[i] != value {
-				return fmt.Errorf("query %s[%d] = %q, want %q", name, i, got[i], value)
-			}
+	}
+
+	return nil
+}
+
+func matchFixtureHeaders(actual http.Header, expected map[string][]string) error {
+	for name, values := range expected {
+		err := compareFixtureValues("header", name, actual.Values(name), values)
+		if err != nil {
+			return err
 		}
 	}
-	for name, values := range want.Headers {
-		got := request.Header.Values(name)
-		if len(got) != len(values) {
-			return fmt.Errorf("header %s = %v, want %v", name, got, values)
-		}
-		for i, value := range values {
-			if got[i] != value {
-				return fmt.Errorf("header %s[%d] = %q, want %q", name, i, got[i], value)
-			}
-		}
+
+	return nil
+}
+
+func compareFixtureValues(label, name string, actual, expected []string) error {
+	if len(actual) != len(expected) {
+		return replayDiagnosticErrorf("%s %s = %v, want %v", label, name, actual, expected)
 	}
-	matchedOperation := false
-	for _, allowed := range want.Operations {
-		if operation == allowed {
-			matchedOperation = true
-			break
+
+	for index, value := range expected {
+		if actual[index] != value {
+			return replayDiagnosticErrorf("%s %s[%d] = %q, want %q", label, name, index, actual[index], value)
 		}
 	}
-	if !matchedOperation {
-		return fmt.Errorf("operation %q is not in %v", operation, want.Operations)
+
+	return nil
+}
+
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
 	}
+
+	return false
+}
+
+func matchFixtureBody(body []byte, expectedBodies []json.RawMessage) error {
 	var actual any
-	if err := json.Unmarshal(body, &actual); err != nil {
-		return fmt.Errorf("decode request body: %w", err)
+
+	decodeErr := json.Unmarshal(body, &actual)
+	if decodeErr != nil {
+		return fmt.Errorf("decode request body: %w", decodeErr)
 	}
-	for _, expected := range want.Bodies {
+
+	for _, expected := range expectedBodies {
 		var candidate any
-		if err := json.Unmarshal(expected, &candidate); err != nil {
-			return fmt.Errorf("decode expected request body: %w", err)
+
+		candidateErr := json.Unmarshal(expected, &candidate)
+		if candidateErr != nil {
+			return fmt.Errorf("decode expected request body: %w", candidateErr)
 		}
+
 		if reflect.DeepEqual(actual, candidate) {
 			return nil
 		}
 	}
-	return fmt.Errorf("request body did not match any of %d stored variants", len(want.Bodies))
+
+	return replayDiagnosticErrorf("request body did not match any of %d stored variants", len(expectedBodies))
 }
 
 func (transport *replayTransport) useFixture(operationKey, fixtureStem string) {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
+
 	transport.configureStep(operationKey, func(step *replayStep) { step.fixture = fixtureStem })
 }
 
 func (transport *replayTransport) useResponse(operationKey string, status int, body []byte) {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
+
 	outcome := findStoredOutcome(operationKey, status, body, "")
 	transport.configureStep(operationKey, func(step *replayStep) { step.outcome = &outcome })
 }
@@ -300,71 +519,123 @@ func (transport *replayTransport) useResponse(operationKey string, status int, b
 func (transport *replayTransport) useError(operationKey string, err error) {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
+
 	outcome := findStoredOutcome(operationKey, 0, nil, err.Error())
 	transport.configureStep(operationKey, func(step *replayStep) { step.outcome = &outcome; step.transportError = err })
 }
 
 func (transport *replayTransport) useFault(id string, cause error, body io.ReadCloser) {
-	data, err := fixtureFiles.ReadFile("fixtures/synthetic/paired_outcomes.synthetic.json")
-	if err != nil {
-		panic(err)
-	}
-	var outcomes []storedOutcome
-	if err := json.Unmarshal(data, &outcomes); err != nil {
-		panic(err)
-	}
-	for _, outcome := range outcomes {
-		if outcome.ID != id {
-			continue
-		}
-		if outcome.Response.Fault == "" {
-			panic("stored outcome is not a fault: " + id)
-		}
-		if cause == nil && outcome.Response.TransportError != "" || cause != nil && cause.Error() != outcome.Response.TransportError {
-			panic("fault cause differs from stored outcome: " + id)
-		}
-		if (body != nil) != (outcome.Response.Fault == "response-and-error") {
-			panic("fault body differs from stored outcome: " + id)
-		}
-		transport.mu.Lock()
-		transport.configureStep(outcome.Operation, func(step *replayStep) { step.outcome = &outcome; step.transportError = cause; step.faultBody = body })
-		transport.mu.Unlock()
-		return
-	}
-	panic("missing stored fault outcome: " + id)
+	outcome := findStoredFaultOutcome(id)
+	validateStoredFaultConfiguration(id, outcome, cause, body)
+
+	transport.mu.Lock()
+	transport.configureStep(outcome.Operation, func(step *replayStep) {
+		step.outcome = &outcome
+		step.transportError = cause
+		step.faultBody = body
+	})
+	transport.mu.Unlock()
 }
 
 func findStoredOutcome(operation string, status int, body []byte, transportError string) storedOutcome {
+	for _, outcome := range readStoredOutcomesForTransport() {
+		if outcome.Operation != operation {
+			continue
+		}
+
+		if storedOutcomeMatchesTransportError(outcome, transportError) {
+			return outcome
+		}
+
+		if storedOutcomeMatchesResponse(outcome, status, body, transportError) {
+			return outcome
+		}
+	}
+
+	panic(fmt.Sprintf("no stored paired outcome for %s status %d", operation, status))
+}
+
+func readStoredOutcomesForTransport() []storedOutcome {
 	data, err := fixtureFiles.ReadFile("fixtures/synthetic/paired_outcomes.synthetic.json")
 	if err != nil {
 		panic(err)
 	}
+
 	var outcomes []storedOutcome
-	if err := json.Unmarshal(data, &outcomes); err != nil {
-		panic(err)
+
+	decodeErr := json.Unmarshal(data, &outcomes)
+	if decodeErr != nil {
+		panic(decodeErr)
 	}
-	for _, outcome := range outcomes {
-		if outcome.Operation != operation {
-			continue
-		}
-		if transportError != "" && outcome.Response.TransportError == transportError {
-			return outcome
-		}
-		storedBody := []byte(outcome.Response.BodyText)
-		if repeat := outcome.Response.BodyRepeat; repeat != nil {
-			storedBody = []byte(strings.Repeat(repeat.Text, repeat.Count))
-		}
-		if transportError == "" && outcome.Response.TransportError == "" && outcome.Response.Status == status && bytes.Equal(storedBody, body) {
+
+	return outcomes
+}
+
+func findStoredFaultOutcome(faultID string) storedOutcome {
+	for _, outcome := range readStoredOutcomesForTransport() {
+		if outcome.ID == faultID {
 			return outcome
 		}
 	}
-	panic(fmt.Sprintf("no stored paired outcome for %s status %d", operation, status))
+
+	panic("missing stored fault outcome: " + faultID)
+}
+
+func validateStoredFaultConfiguration(faultID string, outcome storedOutcome, cause error, body io.ReadCloser) {
+	if outcome.Response.Fault == "" {
+		panic("stored outcome is not a fault: " + faultID)
+	}
+
+	if !storedTransportErrorMatches(outcome.Response.TransportError, cause) {
+		panic("fault cause differs from stored outcome: " + faultID)
+	}
+
+	if (body != nil) != (outcome.Response.Fault == storedFaultResponseAndError) {
+		panic("fault body differs from stored outcome: " + faultID)
+	}
+}
+
+func storedTransportErrorMatches(want string, cause error) bool {
+	if cause == nil {
+		return want == ""
+	}
+
+	return cause.Error() == want
+}
+
+func storedOutcomeMatchesTransportError(outcome storedOutcome, transportError string) bool {
+	return transportError != "" && outcome.Response.TransportError == transportError
+}
+
+func storedOutcomeMatchesResponse(outcome storedOutcome, status int, body []byte, transportError string) bool {
+	if transportError != "" || outcome.Response.TransportError != "" || outcome.Response.Status != status {
+		return false
+	}
+
+	return bytes.Equal(storedOutcomeBody(outcome), body)
+}
+
+func storedOutcomeBody(outcome storedOutcome) []byte {
+	if repeat := outcome.Response.BodyRepeat; repeat != nil {
+		return []byte(strings.Repeat(repeat.Text, repeat.Count))
+	}
+
+	return []byte(outcome.Response.BodyText)
 }
 
 func (transport *replayTransport) configureStep(operation string, configure func(*replayStep)) {
 	if len(transport.steps) == 0 {
-		transport.steps = []replayStep{{operation: operation}}
+		transport.steps = []replayStep{{
+			operation:      operation,
+			fixture:        "",
+			token:          "",
+			variant:        0,
+			outcome:        nil,
+			transportError: nil,
+			faultBody:      nil,
+		}}
 	}
+
 	for i := range transport.steps {
 		if transport.steps[i].operation == operation {
 			configure(&transport.steps[i])
@@ -375,8 +646,10 @@ func (transport *replayTransport) configureStep(operation string, configure func
 func (transport *replayTransport) recordedRequests() []recordedRequest {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
+
 	requests := make([]recordedRequest, len(transport.requests))
 	copy(requests, transport.requests)
+
 	return requests
 }
 
@@ -385,12 +658,16 @@ func requestFixtureKey(body []byte) (string, error) {
 		Method string          `json:"method"`
 		Params json.RawMessage `json:"params"`
 	}
-	if err := json.Unmarshal(body, &request); err != nil {
+
+	err := json.Unmarshal(body, &request)
+	if err != nil {
 		return "", fmt.Errorf("decode TP-Link request envelope: %w", err)
 	}
+
 	if request.Method == "" {
-		return "", fmt.Errorf("TP-Link request has no method")
+		return "", errMissingRequestMethod
 	}
+
 	if request.Method != "passthrough" {
 		return request.Method, nil
 	}
@@ -398,38 +675,39 @@ func requestFixtureKey(body []byte) (string, error) {
 	var params struct {
 		RequestData string `json:"requestData"`
 	}
-	if err := json.Unmarshal(request.Params, &params); err != nil {
+
+	err = json.Unmarshal(request.Params, &params)
+	if err != nil {
 		return "", fmt.Errorf("decode TP-Link passthrough parameters: %w", err)
 	}
 
 	var command map[string]map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(params.RequestData), &command); err != nil {
-		return "", fmt.Errorf("decode TP-Link passthrough command: %w", err)
+
+	decodeErr := json.Unmarshal([]byte(params.RequestData), &command)
+	if decodeErr != nil {
+		return "", fmt.Errorf("decode TP-Link passthrough command: %w", decodeErr)
 	}
+
 	for namespace, methods := range command {
 		if separator := strings.LastIndex(namespace, "."); separator >= 0 {
 			namespace = namespace[separator+1:]
 		}
+
 		for method := range methods {
 			return "passthrough_" + namespace + "_" + method, nil
 		}
 	}
-	return "", fmt.Errorf("TP-Link passthrough request has no command")
-}
 
-func jsonResponse(status int, body []byte) *http.Response {
-	return &http.Response{
-		StatusCode: status,
-		Header:     http.Header{"Content-Type": {"application/json"}},
-		Body:       io.NopCloser(bytes.NewReader(body)),
-	}
+	return "", errMissingDeviceCommand
 }
 
 func cloneURL(value *url.URL) *url.URL {
 	if value == nil {
 		return nil
 	}
+
 	cloned := *value
+
 	return &cloned
 }
 

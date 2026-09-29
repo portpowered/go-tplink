@@ -17,16 +17,24 @@ import (
 
 const replayBaseURL = "https://wap.tplinkcloud.com"
 
+var errConnectionRefused = errors.New("connection refused")
+
 func newTestClient(t *testing.T) (*tplink.Client, *replayTransport) {
 	t.Helper()
 
 	transport := newReplayTransport()
+
 	t.Cleanup(func() {
-		if err := transport.assertConsumed(); err != nil {
+		err := transport.assertConsumed()
+		if err != nil {
 			t.Error(err)
 		}
 	})
-	client := newTestClientWithDoer(t, &http.Client{Transport: transport})
+
+	httpClient := new(http.Client)
+	httpClient.Transport = transport
+	client := newTestClientWithDoer(t, httpClient)
+
 	return client, transport
 }
 
@@ -39,14 +47,17 @@ func newTestClientWithDoer(t *testing.T, doer tplink.HTTPDoer) *tplink.Client {
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = client.Close() })
+
 	return client
 }
 
 func TestLoginAndDeviceListReplay(t *testing.T) {
+	t.Parallel()
 	client, transport := newTestClient(t)
 	transport.expectSequence("login", "getDeviceList", "getDeviceList")
 	transport.expectToken(1, "account-one-token")
 	transport.expectToken(2, "account two+token&scope=devices")
+
 	ctx := context.Background()
 	login, err := client.Login(ctx, tplink.LoginRequest{
 		Email:    "user@example.com",
@@ -61,6 +72,7 @@ func TestLoginAndDeviceListReplay(t *testing.T) {
 	loginRequest := onlyRecordedRequest(t, transport)
 	assert.Equal(t, http.MethodPost, loginRequest.Method)
 	assert.Empty(t, loginRequest.URL.Query().Get("token"))
+
 	var loginEnvelope struct {
 		Method string `json:"method"`
 		Params struct {
@@ -69,12 +81,23 @@ func TestLoginAndDeviceListReplay(t *testing.T) {
 			CloudPassword string `json:"cloudPassword"`
 		} `json:"params"`
 	}
+
 	require.NoError(t, json.Unmarshal(loginRequest.Body, &loginEnvelope))
 	assert.Equal(t, "login", loginEnvelope.Method)
 	assert.Equal(t, "Tapo_Android", loginEnvelope.Params.AppType)
 	assert.Equal(t, "user@example.com", loginEnvelope.Params.CloudUserName)
 	assert.Equal(t, "placeholder-password", loginEnvelope.Params.CloudPassword)
 
+	assertRequestScopedDeviceTokens(ctx, t, client, transport)
+}
+
+func assertRequestScopedDeviceTokens(
+	ctx context.Context,
+	t *testing.T,
+	client *tplink.Client,
+	transport *replayTransport,
+) {
+	t.Helper()
 	// Reuse one client for different request-scoped tokens to ensure auth does
 	// not leak from one account request to the next.
 	first, err := client.GetDevices(ctx, tplink.GetDevicesRequest{
@@ -99,18 +122,23 @@ func TestLoginAndDeviceListReplay(t *testing.T) {
 	assert.Empty(t, requests[0].URL.Query().Get("token"))
 	assert.Equal(t, "account-one-token", requests[1].URL.Query().Get("token"))
 	assert.Equal(t, secondToken, requests[2].URL.Query().Get("token"))
+
 	for _, request := range requests[1:] {
 		assert.Equal(t, http.MethodPost, request.Method)
+
 		var envelope struct {
 			Method string `json:"method"`
 		}
+
 		require.NoError(t, json.Unmarshal(request.Body, &envelope))
 		assert.Equal(t, "getDeviceList", envelope.Method)
 	}
 }
 
 func TestDeviceListReplayShapes(t *testing.T) {
+	t.Parallel()
 	t.Run("empty", func(t *testing.T) {
+		t.Parallel()
 		client, transport := newTestClient(t)
 		transport.useFixture("getDeviceList", "getDeviceList_empty")
 
@@ -122,6 +150,7 @@ func TestDeviceListReplayShapes(t *testing.T) {
 	})
 
 	t.Run("mixed device types", func(t *testing.T) {
+		t.Parallel()
 		client, transport := newTestClient(t)
 		transport.useFixture("getDeviceList", "getDeviceList_mixed")
 
@@ -151,6 +180,8 @@ func TestDeviceListReplayShapes(t *testing.T) {
 }
 
 func TestCloudErrorReplayMappings(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		fixture string
@@ -160,8 +191,10 @@ func TestCloudErrorReplayMappings(t *testing.T) {
 		{name: "expired token", fixture: "error_token_expired", wantErr: tplinkmodels.IsTokenExpiredError},
 		{name: "parameter error", fixture: "error_parameter", wantErr: tplinkmodels.IsParameterError},
 	}
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			client, transport := newTestClient(t)
 			transport.useFixture("getDeviceList", test.fixture)
 
@@ -174,6 +207,7 @@ func TestCloudErrorReplayMappings(t *testing.T) {
 	}
 
 	t.Run("unrecognized cloud error", func(t *testing.T) {
+		t.Parallel()
 		client, transport := newTestClient(t)
 		transport.useResponse("getDeviceList", http.StatusOK, []byte(`{"error_code":-99999,"msg":"Unknown error"}`))
 
@@ -186,7 +220,9 @@ func TestCloudErrorReplayMappings(t *testing.T) {
 }
 
 func TestLoginAndDeviceErrorReplayMappings(t *testing.T) {
+	t.Parallel()
 	t.Run("rejected login", func(t *testing.T) {
+		t.Parallel()
 		client, transport := newTestClient(t)
 		transport.useFixture("login", "login_failure")
 
@@ -199,6 +235,7 @@ func TestLoginAndDeviceErrorReplayMappings(t *testing.T) {
 	})
 
 	t.Run("unsupported plug operation", func(t *testing.T) {
+		t.Parallel()
 		client, transport := newTestClient(t)
 		transport.useFixture("passthrough_system_get_sysinfo", "error_unsupported")
 
@@ -211,9 +248,10 @@ func TestLoginAndDeviceErrorReplayMappings(t *testing.T) {
 	})
 
 	t.Run("unsupported bulb operation", func(t *testing.T) {
+		t.Parallel()
 		client, transport := newTestClient(t)
 		transport.useFixture("passthrough_lightingservice_transition_light_state", "error_unsupported")
-		transport.expectVariant(0, 1)
+		transport.expectVariant(1)
 
 		err := client.SetBrightness(context.Background(), tplink.SetBrightnessRequest{
 			Auth:       tplink.AuthContext{AccessToken: "test-token"},
@@ -225,10 +263,13 @@ func TestLoginAndDeviceErrorReplayMappings(t *testing.T) {
 	})
 
 	t.Run("missing token stops before HTTP", func(t *testing.T) {
+		t.Parallel()
 		client, transport := newTestClient(t)
 		transport.expectCalls(0)
 
-		_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{})
+		_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
+			Auth: tplink.AuthContext{AccessToken: ""},
+		})
 		require.Error(t, err)
 		assert.True(t, tplinkmodels.IsTokenNotSetError(err))
 		assert.Empty(t, transport.recordedRequests())
@@ -236,6 +277,7 @@ func TestLoginAndDeviceErrorReplayMappings(t *testing.T) {
 }
 
 func TestClosedClientRejectsRequests(t *testing.T) {
+	t.Parallel()
 	client, transport := newTestClient(t)
 	transport.expectCalls(0)
 	require.NoError(t, client.Close())
@@ -247,167 +289,223 @@ func TestClosedClientRejectsRequests(t *testing.T) {
 	assert.True(t, tplinkmodels.IsClientClosedError(err))
 }
 
+type passthroughReplayCase struct {
+	name       string
+	deviceID   string
+	command    string
+	variant    int
+	wantFields map[string]any
+	call       func(*tplink.Client) error
+}
+
 func TestPassthroughRequestReplay(t *testing.T) {
-	auth := tplink.AuthContext{AccessToken: "test-token"}
-	ctx := context.Background()
-	tests := []struct {
-		name       string
-		deviceID   string
-		command    string
-		variant    int
-		wantFields map[string]any
-		call       func(*tplink.Client) error
-	}{
-		{
-			name:       "turn on plug",
-			deviceID:   "device-plug-001",
-			command:    "system.set_relay_state",
-			wantFields: map[string]any{"state": float64(1)},
-			call: func(client *tplink.Client) error {
-				return client.TurnOn(ctx, tplink.TurnOnRequest{Auth: auth, DeviceID: "device-plug-001"})
-			},
-		},
-		{
-			name:       "turn off plug",
-			variant:    1,
-			deviceID:   "device-plug-001",
-			command:    "system.set_relay_state",
-			wantFields: map[string]any{"state": float64(0)},
-			call: func(client *tplink.Client) error {
-				return client.TurnOff(ctx, tplink.TurnOffRequest{Auth: auth, DeviceID: "device-plug-001"})
-			},
-		},
-		{
-			name:       "reboot plug",
-			deviceID:   "device-plug-001",
-			command:    "system.reboot",
-			wantFields: map[string]any{"delay": float64(1)},
-			call: func(client *tplink.Client) error {
-				return client.Reboot(ctx, tplink.RebootRequest{Auth: auth, DeviceID: "device-plug-001"})
-			},
-		},
-		{
-			name:       "rename device",
-			deviceID:   "device-plug-001",
-			command:    "system.set_dev_alias",
-			wantFields: map[string]any{"alias": "New Name"},
-			call: func(client *tplink.Client) error {
-				return client.SetAlias(ctx, tplink.SetAliasRequest{Auth: auth, DeviceID: "device-plug-001", Alias: "New Name"})
-			},
-		},
-		{
-			name:       "set brightness",
-			deviceID:   "device-bulb-001",
-			command:    "smartlife.iot.smartbulb.lightingservice.transition_light_state",
-			wantFields: map[string]any{"brightness": float64(50)},
-			call: func(client *tplink.Client) error {
-				return client.SetBrightness(ctx, tplink.SetBrightnessRequest{Auth: auth, DeviceID: "device-bulb-001", Brightness: 50})
-			},
-		},
-		{
-			name:       "set color temperature",
-			variant:    1,
-			deviceID:   "device-bulb-001",
-			command:    "smartlife.iot.smartbulb.lightingservice.transition_light_state",
-			wantFields: map[string]any{"color_temp": float64(4000)},
-			call: func(client *tplink.Client) error {
-				return client.SetColorTemp(ctx, tplink.SetColorTempRequest{Auth: auth, DeviceID: "device-bulb-001", ColorTemp: 4000})
-			},
-		},
-		{
-			name:       "set color",
-			variant:    2,
-			deviceID:   "device-bulb-001",
-			command:    "smartlife.iot.smartbulb.lightingservice.transition_light_state",
-			wantFields: map[string]any{"hue": float64(240), "saturation": float64(80)},
-			call: func(client *tplink.Client) error {
-				return client.SetColor(ctx, tplink.SetColorRequest{Auth: auth, DeviceID: "device-bulb-001", Hue: 240, Saturation: 80})
-			},
-		},
-		{
-			name:       "set light state",
-			variant:    3,
-			deviceID:   "device-bulb-001",
-			command:    "smartlife.iot.smartbulb.lightingservice.transition_light_state",
-			wantFields: map[string]any{"on_off": float64(1), "brightness": float64(75), "hue": float64(120), "saturation": float64(50)},
-			call: func(client *tplink.Client) error {
-				return client.SetLightState(ctx, tplink.SetLightStateRequest{
-					Auth:     auth,
-					DeviceID: "device-bulb-001",
-					State:    map[string]any{"on_off": 1, "brightness": 75, "hue": 120, "saturation": 50},
-				})
-			},
-		},
-		{
-			name:     "read plug state",
-			deviceID: "device-plug-001",
-			command:  "system.get_sysinfo",
-			call: func(client *tplink.Client) error {
-				_, err := client.GetPowerState(ctx, tplink.GetPowerStateRequest{Auth: auth, DeviceID: "device-plug-001"})
-				return err
-			},
-		},
-		{
-			name:     "read bulb state",
-			deviceID: "device-bulb-001",
-			command:  "smartlife.iot.smartbulb.lightingservice.get_light_state",
-			call: func(client *tplink.Client) error {
-				_, err := client.GetLightState(ctx, tplink.GetLightStateRequest{Auth: auth, DeviceID: "device-bulb-001"})
-				return err
-			},
-		},
-		{
-			name:     "read brightness",
-			deviceID: "device-bulb-001",
-			command:  "smartlife.iot.smartbulb.lightingservice.get_light_state",
-			call: func(client *tplink.Client) error {
-				_, err := client.GetBrightness(ctx, tplink.GetBrightnessRequest{Auth: auth, DeviceID: "device-bulb-001"})
-				return err
-			},
-		},
-		{
-			name:     "read color temperature",
-			deviceID: "device-bulb-001",
-			command:  "smartlife.iot.smartbulb.lightingservice.get_light_state",
-			call: func(client *tplink.Client) error {
-				_, err := client.GetColorTemp(ctx, tplink.GetColorTempRequest{Auth: auth, DeviceID: "device-bulb-001"})
-				return err
-			},
-		},
-		{
-			name:     "read color",
-			deviceID: "device-bulb-001",
-			command:  "smartlife.iot.smartbulb.lightingservice.get_light_state",
-			call: func(client *tplink.Client) error {
-				_, err := client.GetColor(ctx, tplink.GetColorRequest{Auth: auth, DeviceID: "device-bulb-001"})
-				return err
-			},
-		},
-	}
+	t.Parallel()
+	t.Run("plug operations", func(t *testing.T) {
+		t.Parallel()
+		runPassthroughRequestCases(t, plugCommandReplayCases())
+	})
+	t.Run("light mutations", func(t *testing.T) {
+		t.Parallel()
+		runPassthroughRequestCases(t, lightMutationReplayCases())
+	})
+	t.Run("state reads", func(t *testing.T) {
+		t.Parallel()
+		runPassthroughRequestCases(t, stateReadReplayCases())
+	})
+}
+
+func runPassthroughRequestCases(t *testing.T, tests []passthroughReplayCase) {
+	t.Helper()
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			client, transport := newTestClient(t)
 			parts := strings.Split(test.command, ".")
-			transport.expectSequence("passthrough_" + parts[len(parts)-2] + "_" + parts[len(parts)-1])
-			transport.expectVariant(0, test.variant)
+			operation := "passthrough_" + parts[len(parts)-2] + "_" + parts[len(parts)-1]
+			transport.expectSequence(operation)
+			transport.expectVariant(test.variant)
 			require.NoError(t, test.call(client))
-			request := onlyRecordedRequest(t, transport)
-			assert.Equal(t, "test-token", request.URL.Query().Get("token"))
-
-			command, fields := decodePassthroughCommand(t, request.Body)
-			assert.Equal(t, test.deviceID, command.deviceID)
-			assert.Equal(t, test.command, command.name)
-			for key, want := range test.wantFields {
-				assert.Equal(t, want, fields[key], "command field %q", key)
-			}
+			assertPassthroughReplayRequest(t, transport, test)
 		})
 	}
 }
 
+func assertPassthroughReplayRequest(t *testing.T, transport *replayTransport, test passthroughReplayCase) {
+	t.Helper()
+	request := onlyRecordedRequest(t, transport)
+	assert.Equal(t, "test-token", request.URL.Query().Get("token"))
+	command, fields := decodePassthroughCommand(t, request.Body)
+	assert.Equal(t, test.deviceID, command.deviceID)
+	assert.Equal(t, test.command, command.name)
+
+	for key, want := range test.wantFields {
+		assert.Equal(t, want, fields[key], "command field %q", key)
+	}
+}
+
+func plugCommandReplayCases() []passthroughReplayCase {
+	auth := tplink.AuthContext{AccessToken: "test-token"}
+
+	return []passthroughReplayCase{
+		{
+			name: "turn on plug", deviceID: "device-plug-001", command: "system.set_relay_state",
+			variant: 0, wantFields: map[string]any{"state": float64(1)},
+			call: func(client *tplink.Client) error {
+				return client.TurnOn(context.Background(), tplink.TurnOnRequest{Auth: auth, DeviceID: "device-plug-001"})
+			},
+		},
+		{
+			name: "turn off plug", deviceID: "device-plug-001", command: "system.set_relay_state",
+			variant: 1, wantFields: map[string]any{"state": float64(0)},
+			call: func(client *tplink.Client) error {
+				return client.TurnOff(context.Background(), tplink.TurnOffRequest{Auth: auth, DeviceID: "device-plug-001"})
+			},
+		},
+		{
+			name: "reboot plug", deviceID: "device-plug-001", command: "system.reboot",
+			variant: 0, wantFields: map[string]any{"delay": float64(1)},
+			call: func(client *tplink.Client) error {
+				return client.Reboot(context.Background(), tplink.RebootRequest{Auth: auth, DeviceID: "device-plug-001"})
+			},
+		},
+		{
+			name: "rename device", deviceID: "device-plug-001", command: "system.set_dev_alias",
+			variant: 0, wantFields: map[string]any{"alias": "New Name"},
+			call: func(client *tplink.Client) error {
+				return client.SetAlias(context.Background(), tplink.SetAliasRequest{
+					Auth: auth, DeviceID: "device-plug-001", Alias: "New Name",
+				})
+			},
+		},
+	}
+}
+
+func lightMutationReplayCases() []passthroughReplayCase {
+	auth := tplink.AuthContext{AccessToken: "test-token"}
+	command := "smartlife.iot.smartbulb.lightingservice.transition_light_state"
+
+	return []passthroughReplayCase{
+		{
+			name: "set brightness", deviceID: "device-bulb-001", command: command,
+			variant: 0, wantFields: map[string]any{"brightness": float64(50)},
+			call: func(client *tplink.Client) error {
+				return client.SetBrightness(context.Background(), tplink.SetBrightnessRequest{
+					Auth: auth, DeviceID: "device-bulb-001", Brightness: 50,
+				})
+			},
+		},
+		{
+			name: "set color temperature", deviceID: "device-bulb-001", command: command,
+			variant: 1, wantFields: map[string]any{"color_temp": float64(4000)},
+			call: func(client *tplink.Client) error {
+				return client.SetColorTemp(context.Background(), tplink.SetColorTempRequest{
+					Auth: auth, DeviceID: "device-bulb-001", ColorTemp: 4000,
+				})
+			},
+		},
+		{
+			name: "set color", deviceID: "device-bulb-001", command: command,
+			variant: 2, wantFields: map[string]any{"hue": float64(240), "saturation": float64(80)},
+			call: func(client *tplink.Client) error {
+				return client.SetColor(context.Background(), tplink.SetColorRequest{
+					Auth: auth, DeviceID: "device-bulb-001", Hue: 240, Saturation: 80,
+				})
+			},
+		},
+		{
+			name: "set light state", deviceID: "device-bulb-001", command: command,
+			variant: 3,
+			wantFields: map[string]any{
+				"on_off": float64(1), "brightness": float64(75), "hue": float64(120), "saturation": float64(50),
+			},
+			call: func(client *tplink.Client) error {
+				return client.SetLightState(context.Background(), tplink.SetLightStateRequest{
+					Auth: auth, DeviceID: "device-bulb-001",
+					State: map[string]any{"on_off": 1, "brightness": 75, "hue": 120, "saturation": 50},
+				})
+			},
+		},
+	}
+}
+
+func stateReadReplayCases() []passthroughReplayCase {
+	auth := tplink.AuthContext{AccessToken: "test-token"}
+
+	return []passthroughReplayCase{
+		{
+			name: "read plug state", deviceID: "device-plug-001", command: "system.get_sysinfo",
+			variant: 0, wantFields: nil,
+			call: func(client *tplink.Client) error {
+				_, err := client.GetPowerState(context.Background(), tplink.GetPowerStateRequest{
+					Auth: auth, DeviceID: "device-plug-001",
+				})
+
+				//nolint:wrapcheck // The replay callback must pass client errors through unchanged.
+				return err
+			},
+		},
+		{
+			name: "read bulb state", deviceID: "device-bulb-001",
+			command: "smartlife.iot.smartbulb.lightingservice.get_light_state", variant: 0, wantFields: nil,
+			call: func(client *tplink.Client) error {
+				_, err := client.GetLightState(context.Background(), tplink.GetLightStateRequest{
+					Auth: auth, DeviceID: "device-bulb-001",
+				})
+
+				//nolint:wrapcheck // The replay callback must pass client errors through unchanged.
+				return err
+			},
+		},
+		{
+			name: "read brightness", deviceID: "device-bulb-001",
+			command: "smartlife.iot.smartbulb.lightingservice.get_light_state", variant: 0, wantFields: nil,
+			call: func(client *tplink.Client) error {
+				_, err := client.GetBrightness(context.Background(), tplink.GetBrightnessRequest{
+					Auth: auth, DeviceID: "device-bulb-001",
+				})
+
+				//nolint:wrapcheck // The replay callback must pass client errors through unchanged.
+				return err
+			},
+		},
+		{
+			name: "read color temperature", deviceID: "device-bulb-001",
+			command: "smartlife.iot.smartbulb.lightingservice.get_light_state", variant: 0, wantFields: nil,
+			call: func(client *tplink.Client) error {
+				_, err := client.GetColorTemp(context.Background(), tplink.GetColorTempRequest{
+					Auth: auth, DeviceID: "device-bulb-001",
+				})
+
+				//nolint:wrapcheck // The replay callback must pass client errors through unchanged.
+				return err
+			},
+		},
+		{
+			name: "read color", deviceID: "device-bulb-001",
+			command: "smartlife.iot.smartbulb.lightingservice.get_light_state", variant: 0, wantFields: nil,
+			call: func(client *tplink.Client) error {
+				_, err := client.GetColor(context.Background(), tplink.GetColorRequest{
+					Auth: auth, DeviceID: "device-bulb-001",
+				})
+
+				//nolint:wrapcheck // The replay callback must pass client errors through unchanged.
+				return err
+			},
+		},
+	}
+}
 func TestPowerAndLightStateReplayResults(t *testing.T) {
+	t.Parallel()
 	client, transport := newTestClient(t)
-	transport.expectSequence("passthrough_system_get_sysinfo", "passthrough_lightingservice_get_light_state", "passthrough_lightingservice_get_light_state", "passthrough_lightingservice_get_light_state", "passthrough_lightingservice_get_light_state")
+	transport.expectSequence(
+		"passthrough_system_get_sysinfo",
+		"passthrough_lightingservice_get_light_state",
+		"passthrough_lightingservice_get_light_state",
+		"passthrough_lightingservice_get_light_state",
+		"passthrough_lightingservice_get_light_state",
+	)
+
 	ctx := context.Background()
 	auth := tplink.AuthContext{AccessToken: "test-token"}
 
@@ -440,17 +538,27 @@ func TestPowerAndLightStateReplayResults(t *testing.T) {
 }
 
 func TestMalformedAndHTTPFailureResponses(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		status int
 		body   []byte
 		want   func(error) bool
 	}{
-		{name: "http server failure", status: http.StatusInternalServerError, body: []byte(`{"error":"failed"}`), want: tplinkmodels.IsHTTPStatusError},
-		{name: "malformed JSON", status: http.StatusOK, body: []byte(`{"error_code":`), want: tplinkmodels.IsInvalidResponseError},
+		{
+			name: "http server failure", status: http.StatusInternalServerError,
+			body: []byte(`{"error":"failed"}`), want: tplinkmodels.IsHTTPStatusError,
+		},
+		{
+			name: "malformed JSON", status: http.StatusOK,
+			body: []byte(`{"error_code":`), want: tplinkmodels.IsInvalidResponseError,
+		},
 	}
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			client, transport := newTestClient(t)
 			transport.useResponse("getDeviceList", test.status, test.body)
 
@@ -464,6 +572,7 @@ func TestMalformedAndHTTPFailureResponses(t *testing.T) {
 }
 
 func TestPassthroughMissingCommandIsInvalidResponse(t *testing.T) {
+	t.Parallel()
 	client, transport := newTestClient(t)
 	transport.expectSequence("passthrough_system_set_relay_state", "passthrough_system_get_sysinfo")
 	transport.useResponse("passthrough_system_set_relay_state", http.StatusOK,
@@ -476,13 +585,17 @@ func TestPassthroughMissingCommandIsInvalidResponse(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, tplinkmodels.IsInvalidResponseError(err))
 
-	_, err = client.GetPowerState(context.Background(), tplink.GetPowerStateRequest{Auth: auth, DeviceID: "device-plug-001"})
+	_, err = client.GetPowerState(context.Background(), tplink.GetPowerStateRequest{
+		Auth: auth, DeviceID: "device-plug-001",
+	})
 	require.Error(t, err)
 	assert.True(t, tplinkmodels.IsInvalidResponseError(err))
 }
 
 func TestOversizedAndNilHTTPResponses(t *testing.T) {
+	t.Parallel()
 	t.Run("oversized body", func(t *testing.T) {
+		t.Parallel()
 		client, transport := newTestClient(t)
 		transport.useResponse("getDeviceList", http.StatusOK, []byte(strings.Repeat(" ", (1<<20)+1)))
 
@@ -494,6 +607,8 @@ func TestOversizedAndNilHTTPResponses(t *testing.T) {
 	})
 
 	t.Run("nil response", func(t *testing.T) {
+		t.Parallel()
+
 		transport := newReplayTransport()
 		transport.useFault("fault-device-nil-response", nil, nil)
 		client := newTestClientWithDoer(t, httpDoerFunc(transport.RoundTrip))
@@ -507,6 +622,7 @@ func TestOversizedAndNilHTTPResponses(t *testing.T) {
 	})
 
 	t.Run("nil response body", func(t *testing.T) {
+		t.Parallel()
 		client, transport := newTestClient(t)
 		transport.useFault("fault-device-nil-body", nil, nil)
 
@@ -519,9 +635,11 @@ func TestOversizedAndNilHTTPResponses(t *testing.T) {
 }
 
 func TestTransportErrorsDoNotLeakRequestTokens(t *testing.T) {
+	t.Parallel()
 	client, transport := newTestClient(t)
-	transportFailure := errors.New("connection refused")
+	transportFailure := errConnectionRefused
 	transport.useError("getDeviceList", transportFailure)
+
 	token := "private token+&scope=devices"
 	transport.expectToken(0, token)
 
@@ -532,9 +650,10 @@ func TestTransportErrorsDoNotLeakRequestTokens(t *testing.T) {
 	assert.True(t, tplinkmodels.IsNetworkError(err))
 	assert.NotContains(t, err.Error(), token)
 	assert.NotContains(t, err.Error(), url.QueryEscape(token))
-	assert.ErrorIs(t, err, transportFailure)
+	require.ErrorIs(t, err, transportFailure)
 
 	var requestError *url.Error
+
 	require.ErrorAs(t, err, &requestError)
 	redactedURL, parseErr := url.Parse(requestError.URL)
 	require.NoError(t, parseErr)
@@ -549,13 +668,16 @@ type decodedCommand struct {
 
 func onlyRecordedRequest(t *testing.T, transport *replayTransport) recordedRequest {
 	t.Helper()
+
 	requests := transport.recordedRequests()
 	require.Len(t, requests, 1)
+
 	return requests[0]
 }
 
 func decodePassthroughCommand(t *testing.T, body []byte) (decodedCommand, map[string]any) {
 	t.Helper()
+
 	var request struct {
 		Method string `json:"method"`
 		Params struct {
@@ -563,24 +685,32 @@ func decodePassthroughCommand(t *testing.T, body []byte) (decodedCommand, map[st
 			RequestData string `json:"requestData"`
 		} `json:"params"`
 	}
+
 	require.NoError(t, json.Unmarshal(body, &request))
 	assert.Equal(t, "passthrough", request.Method)
 
 	var commands map[string]map[string]json.RawMessage
+
 	require.NoError(t, json.Unmarshal([]byte(request.Params.RequestData), &commands))
 	require.Len(t, commands, 1)
+
 	var decoded decodedCommand
+
 	decoded.deviceID = request.Params.DeviceID
+
 	var commandBody json.RawMessage
+
 	for namespace, methods := range commands {
 		for method, raw := range methods {
 			decoded.name = namespace + "." + method
 			commandBody = raw
 		}
 	}
+
 	var fields map[string]any
 	if len(commandBody) > 0 {
 		_ = json.Unmarshal(commandBody, &fields)
 	}
+
 	return decoded, fields
 }

@@ -13,19 +13,26 @@ func ClassifyDevice(deviceType string) EndpointType {
 }
 
 // DetectCapabilities infers device capabilities from metadata fields.
-func DetectCapabilities(d Device) Capabilities {
-	t := ClassifyDevice(d.DeviceType)
-	caps := Capabilities{OnOff: t == EndpointTypePlug || t == EndpointTypeBulb}
+func DetectCapabilities(device Device) Capabilities {
+	endpointType := ClassifyDevice(device.DeviceType)
+	caps := Capabilities{
+		OnOff:      endpointType == EndpointTypePlug || endpointType == EndpointTypeBulb,
+		Brightness: false,
+		Color:      false,
+		ColorTemp:  false,
+	}
 
-	switch t {
+	switch endpointType {
 	case EndpointTypePlug:
-		if d.Brightness > 0 {
+		if device.Brightness > 0 {
 			caps.Brightness = true
 		}
 	case EndpointTypeBulb:
-		caps.Brightness = d.IsDimmable == 1
-		caps.Color = d.IsColor == 1
-		caps.ColorTemp = d.IsVariableColor == 1
+		caps.Brightness = device.IsDimmable == 1
+		caps.Color = device.IsColor == 1
+		caps.ColorTemp = device.IsVariableColor == 1
+	case EndpointTypeOther:
+		return caps
 	}
 
 	return caps

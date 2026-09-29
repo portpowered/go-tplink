@@ -1,0 +1,42 @@
+version: "2"
+
+linters:
+  default: all
+
+  settings:
+    depguard:
+      rules:
+        Main:
+          list-mode: strict
+          files:
+            - $all
+            - "!$test"
+            - "!**/*.gen.go"
+          allow:
+            - $gostd
+            - github.com/portpowered/go-tplink
+
+        Tests:
+          list-mode: strict
+          files:
+            - $test
+          allow:
+            - $gostd
+            - github.com/portpowered/go-tplink
+            - github.com/stretchr/testify
+
+        Generated:
+          list-mode: strict
+          files:
+            - "**/*.gen.go"
+          allow:
+            - $gostd
+            - github.com/portpowered/go-tplink
+            - github.com/oapi-codegen/runtime
+    forbidigo:
+      # Command-line examples and tools intentionally write formatted output.
+      # Keep the built-in debug print functions forbidden.
+      forbid:
+        - pattern: ^print(ln)?$
+  exclusions:
+    generated: strict
