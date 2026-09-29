@@ -71,6 +71,7 @@ jobs:
               _ = context.Background()
           }
           EOF
+          go mod tidy
           go test ./...
       - name: Publish release notes
         env:
