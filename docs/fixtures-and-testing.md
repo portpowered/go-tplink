@@ -54,9 +54,9 @@ The CI workflow installs golangci-lint v2.3.0 and runs the full-repository
 lint command as a blocking job. The configuration does not disable
 linters or filter findings through a baseline.
 
-The [all-linter checklist](all-linter-checklist.md) and
-[independent review](all-linter-review.md) record the item-5 signoff at the
-reviewed commit.
+The [current checklist](template-checklist.md) and
+[review record](independent-review.md) distinguish historical scoped signoffs
+from the pending complete review.
 
 ## Replay coverage
 

@@ -26,6 +26,63 @@ jobs:
         with:
           version: v2.3.0
           args: ./...
+  cli-lint:
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: 'off'
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cmd/go-tplink/go.mod
+          cache: true
+      - name: Lint standalone CLI with all linters (golangci-lint v2.3.0)
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.3.0
+          working-directory: cmd/go-tplink
+          args: --config .golangci.yml --allow-parallel-runners ./...
+  cli-verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        go: ['1.24.x', '1.26.x']
+    runs-on: ${{ matrix.os }}
+    env:
+      GOWORK: 'off'
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+      - name: Build standalone CLI
+        run: go build ./...
+        working-directory: cmd/go-tplink
+      - name: Test standalone CLI
+        run: go test -race ./...
+        working-directory: cmd/go-tplink
+      - name: Vet standalone CLI
+        run: go vet ./...
+        working-directory: cmd/go-tplink
+      - name: Check CLI formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l *.go)"
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted Go files:"
+            echo "$unformatted"
+            exit 1
+          fi
+        working-directory: cmd/go-tplink
+      - name: Check CLI module metadata
+        run: go mod tidy
+        working-directory: cmd/go-tplink
+      - name: Ensure CLI module metadata is tidy
+        run: git diff --exit-code -- cmd/go-tplink/go.mod cmd/go-tplink/go.sum
   verify:
     strategy:
       fail-fast: false

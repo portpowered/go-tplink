@@ -1,0 +1,32 @@
+version: "2"
+
+linters:
+  default: all
+
+  settings:
+    depguard:
+      rules:
+        Main:
+          list-mode: strict
+          files:
+            - $all
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/portpowered/go-tplink/pkg/tplink
+            - github.com/portpowered/go-tplink/pkg/tplinkmodels
+            - golang.org/x/sys/windows
+            - golang.org/x/term
+
+        Tests:
+          list-mode: strict
+          files:
+            - $test
+          allow:
+            - $gostd
+            - github.com/portpowered/go-tplink/pkg/tplink
+            - github.com/portpowered/go-tplink/pkg/tplinkmodels
+
+    forbidigo:
+      forbid:
+        - pattern: ^print(ln)?$
