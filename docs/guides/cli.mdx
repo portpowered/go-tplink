@@ -1,0 +1,112 @@
+---
+title: Terminal CLI
+description: Install and use the standalone go-tplink command-line client.
+---
+
+# Terminal CLI
+
+Use `go-tplink` to sign in, inspect devices, and try plug or lighting commands.
+
+## Install
+
+The first standalone CLI release is pending. Until it is published, run from a checkout:
+
+```sh
+cd cmd/go-tplink
+go run . --help
+```
+
+After publication, install the command with Go 1.24 or later:
+
+```sh
+go install github.com/portpowered/go-tplink/cmd/go-tplink@latest
+```
+
+The executable is written to `GOBIN`, or `GOPATH/bin` when `GOBIN` is unset.
+
+## Sign in
+
+Run the login command from a terminal to enter your email and password at
+prompts. Password input is hidden:
+
+```sh
+go-tplink auth login
+```
+
+For automation, provide both `TPLINK_EMAIL` and `TPLINK_PASSWORD` through your
+operating system's secret environment. You can also pass a JSON object through
+standard input:
+
+```sh
+go-tplink auth login --stdin
+```
+
+The JSON input has `email` and `password` fields. `--credentials-file path`
+reads the same format from a file; protect that file so other local users
+cannot read it. Do not put passwords or tokens in command arguments.
+
+After successful login, the CLI saves only the returned session token in a
+user-only file under the operating system's user configuration directory.
+Check the login state without displaying the token:
+
+```sh
+go-tplink auth status
+go-tplink auth status --json
+```
+
+Use `go-tplink auth export --output path` only when another application needs
+the session token. Export creates a new user-only JSON file and refuses to
+overwrite an existing file. Treat that file as a secret. The command
+`go-tplink auth logout` removes the CLI's saved token.
+
+Pass `--token-file path` before a command to use a different token file, for
+example `go-tplink --token-file ./private/session.json auth status`.
+
+## Find and control devices
+
+List devices registered to the signed-in account. JSON is available for
+machine-readable output:
+
+```sh
+go-tplink devices list
+go-tplink devices list --json
+```
+
+Use a device ID from the list for plug controls and state reads:
+
+```sh
+go-tplink plug state --json DEVICE_ID
+go-tplink plug on DEVICE_ID
+go-tplink plug off DEVICE_ID
+go-tplink plug reboot DEVICE_ID
+```
+
+Read and change supported bulb settings:
+
+```sh
+go-tplink bulb state --json DEVICE_ID
+go-tplink bulb brightness DEVICE_ID 65
+go-tplink bulb color-temp DEVICE_ID 4000
+go-tplink bulb color DEVICE_ID 190 60
+```
+
+Rename a device with an explicit alias command:
+
+```sh
+go-tplink device alias DEVICE_ID "Bedroom Light"
+```
+
+Every device change uses an explicit command. The command set follows the
+operations provided by the SDK: device listing, plug power/state/reboot,
+bulb state/brightness/color temperature/hue and saturation, and aliases.
+
+## Safety and errors
+
+Passwords are never accepted as command arguments, and normal output does not
+print passwords or session tokens. The saved token is sent to the provider as
+part of authenticated requests; avoid logging full request URLs. Use `--json`
+on supported read commands when another program consumes the output.
+
+Errors are written to standard error and return a nonzero exit status. Press
+Ctrl-C to cancel an active request. The CLI closes its SDK client after each
+command. `go-tplink --help` lists all commands and options.

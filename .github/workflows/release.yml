@@ -2,13 +2,14 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', 'cmd/go-tplink/v*']
 
 permissions:
   contents: read
 
 jobs:
   verify-and-publish:
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -78,3 +79,77 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ github.ref_name }}
         run: gh release create "$VERSION" --verify-tag --generate-notes
+
+  verify-cli-and-publish:
+    if: startsWith(github.ref, 'refs/tags/cmd/go-tplink/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GOWORK: 'off'
+      GOTOOLCHAIN: local
+      CLI_MODULE: github.com/portpowered/go-tplink/cmd/go-tplink
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cmd/go-tplink/go.mod
+          cache: true
+      - name: Lint CLI module with all linters (golangci-lint v2.3.0)
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.3.0
+          working-directory: cmd/go-tplink
+          args: --config .golangci.yml --allow-parallel-runners ./...
+      - name: Build CLI module
+        run: go build ./...
+        working-directory: cmd/go-tplink
+      - name: Test CLI module
+        run: go test -race ./...
+        working-directory: cmd/go-tplink
+      - name: Vet CLI module
+        run: go vet ./...
+        working-directory: cmd/go-tplink
+      - name: Check CLI formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l *.go)"
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted Go files:"
+            echo "$unformatted"
+            exit 1
+          fi
+        working-directory: cmd/go-tplink
+      - name: Check CLI module metadata
+        run: go mod tidy
+        working-directory: cmd/go-tplink
+      - name: Ensure CLI module metadata is tidy
+        run: git diff --exit-code -- cmd/go-tplink/go.mod cmd/go-tplink/go.sum
+      - name: Verify the published CLI from the Go proxy
+        env:
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          version="${TAG##*/}"
+          check_dir="$(mktemp -d)"
+          mkdir -p "$check_dir/bin"
+          export GOBIN="$check_dir/bin"
+          module_ready=false
+          for attempt in {1..6}; do
+            if go install "${CLI_MODULE}@${version}"; then
+              module_ready=true
+              break
+            fi
+            echo "CLI module not available through the Go proxy yet (attempt ${attempt}/6)"
+            sleep 10
+          done
+          if [ "$module_ready" != true ]; then
+            echo "Could not install the tagged CLI after six attempts."
+            exit 1
+          fi
+          "$GOBIN/go-tplink" --help
+      - name: Publish CLI release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --verify-tag --generate-notes

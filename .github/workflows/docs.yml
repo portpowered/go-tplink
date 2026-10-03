@@ -35,7 +35,7 @@ jobs:
           title: go-tplink API Reference
           openapi: api/openapi.yaml
           discover: false
-          guides-directory: docs/site
+          guides-directory: docs/guides
           base-path: /go-tplink
           output: site
       - uses: actions/setup-go@v5
