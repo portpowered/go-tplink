@@ -2,12 +2,15 @@
 
 package main
 
-import "os"
+import (
+	"fmt"
+	"os"
+)
 
 func restrictCredentialPath(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("inspect credential path: %w", err)
 	}
 
 	mode := os.FileMode(privateFileMode)
@@ -15,9 +18,19 @@ func restrictCredentialPath(path string) error {
 		mode = privateDirMode
 	}
 
-	return os.Chmod(path, mode)
+	err = os.Chmod(path, mode)
+	if err != nil {
+		return fmt.Errorf("restrict credential permissions: %w", err)
+	}
+
+	return nil
 }
 
 func replaceCredentialFile(source, destination string) error {
-	return os.Rename(source, destination)
+	err := os.Rename(source, destination)
+	if err != nil {
+		return fmt.Errorf("replace credential file: %w", err)
+	}
+
+	return nil
 }
