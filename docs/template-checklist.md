@@ -1,6 +1,6 @@
 # go-tplink checklist
 
-Requirements copied from the shared template at `843ec3f2ef2d28920c39ddbfef63d6a857c6fe05`.
+Requirements copied from the shared template at `8fd452025259f9ad724498e15787948edbd06784`.
 
 Earlier scoped lint and replay reviews do not certify these expanded requirements.
 Keep every item open until two independent reviewers verify all items at the final
@@ -22,6 +22,15 @@ implementation commit.
    this requirement. Keep genuinely caller-defined open fields explicit in the schema and
    distinguish them from payload shapes constructed by the library. Add a negative gate test
    for an unregistered nested payload or library-defined wire key.
+   Record each primitive value and semantic projection separately, with its schema owner,
+   generated declaration, and actual package-resolved uses; similarly named SDK and transport
+   values must not be conflated. Bind shared known values to their original enum and reject
+   value drift or a missing binding. Preserve explicitly open future values. When a GraphQL
+   JSON scalar contains known members, generate those members from a bound component without
+   changing the emitted selection. Generate library-owned string templates and cookie formats
+   as well as JSON objects. Negative controls must reject a novel unregistered fixed value or
+   key in a generated wire object, later field mutations, local aliases, and forged generated
+   markers; a denylist of already-known literal values alone is insufficient.
    Build a complete model inventory as well as an endpoint inventory. For every production
    struct encoded, decoded, or embedded in a wire exchange, record its schema component,
    generated Go type, generator command, and conversion call site. Include exported dependency
@@ -106,4 +115,4 @@ implementation commit.
 
 - [ ] **16.** Provide an installable standalone CLI that consumes the public SDK so customers can test the library without a consuming application. Use a separate module under `cmd/go-<provider>`; keep CLI concerns out of the SDK. Cover authentication and explicit token exchange, device or endpoint discovery, important read/control workflows, and event/session lifecycles where supported. Include useful help, machine-readable output, nonzero failures, cancellation, and session cleanup. Accept credentials through documented environment, stdin, or explicit file inputs; keep secrets out of arguments and ordinary output, and make credential export an explicit action. Require explicit commands for device changes. Document installation and customer examples in an MDX guide. Test CLI commands offline through injected paired request/response transports, including authentication errors and lifecycle cleanup, and run blocking pinned all-linter, build, test, and module checks for the CLI in CI. Verify a separate consumer installation from the published CLI module and release its module tags with the SDK.
 
-See [verification](https://github.com/portpowered/go-third-party-template/blob/843ec3f2ef2d28920c39ddbfef63d6a857c6fe05/docs/verification.md), [client design](https://github.com/portpowered/go-third-party-template/blob/843ec3f2ef2d28920c39ddbfef63d6a857c6fe05/docs/client-design.md), and [website publishing](https://github.com/portpowered/go-third-party-template/blob/843ec3f2ef2d28920c39ddbfef63d6a857c6fe05/docs/website.md).
+See [verification](https://github.com/portpowered/go-third-party-template/blob/8fd452025259f9ad724498e15787948edbd06784/docs/verification.md), [client design](https://github.com/portpowered/go-third-party-template/blob/8fd452025259f9ad724498e15787948edbd06784/docs/client-design.md), and [website publishing](https://github.com/portpowered/go-third-party-template/blob/8fd452025259f9ad724498e15787948edbd06784/docs/website.md).
