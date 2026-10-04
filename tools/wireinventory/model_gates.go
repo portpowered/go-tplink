@@ -1724,6 +1724,10 @@ func checkRequestMetadata(file *ast.File, newRequest, requestURL *ast.FuncDecl) 
 		return inventoryError("generated content-type header name and value must reach the constructed request")
 	}
 
+	if !hasNoNewRequestMutations(file, newRequest) {
+		return inventoryError(requestMutationMessage)
+	}
+
 	if !hasGeneratedPathAssignment(file, requestURL) || !hasGeneratedTokenQuery(file, requestURL) {
 		return inventoryError("generated endpoint path and query key must reach the request URL")
 	}
@@ -1742,6 +1746,10 @@ func checkRouteAndSendFlow(file *ast.File, newRequest *ast.FuncDecl, functions m
 
 	if !hasSendRequestFlow(functions["Send"]) {
 		return inventoryError("only the generated endpoint request may reach the injected HTTPDoer")
+	}
+
+	if !hasNoSendRequestMutations(file, functions["Send"]) {
+		return inventoryError(requestMutationMessage)
 	}
 
 	if !hasNoExtraNetworkPrimitives(file, newRequest, functions["Send"]) {
@@ -2042,7 +2050,7 @@ func routeMutationCounts(function *ast.FuncDecl, resultObject token.Pos) (int, i
 				pathAssignments++
 			case generatedRequestQueryField:
 				queryAssignments++
-			case "RawPath", "Host", "Opaque":
+			default:
 				valid = false
 			}
 		}

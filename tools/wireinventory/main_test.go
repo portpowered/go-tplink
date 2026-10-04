@@ -779,17 +779,19 @@ func TestHTTPEndpointInventoryRejectsRouteDrift(t *testing.T) {
 }
 
 func endpointRouteDriftFixtures() map[string][2]string {
-	return map[string][2]string{
+	const generatedPathAssignment = "result.Path = dependencymodels.CloudRequestPath"
+
+	fixtures := map[string][2]string{
 		"hardcoded method": {
 			"dependencymodels.CloudRequestHTTPMethod,",
 			`"POST",`,
 		},
 		"hardcoded path": {
-			"result.Path = dependencymodels.CloudRequestPath",
+			generatedPathAssignment,
 			`result.Path = "/v2"`,
 		},
 		"token-nil path skip": {
-			"result.Path = dependencymodels.CloudRequestPath",
+			generatedPathAssignment,
 			"if token != nil { result.Path = dependencymodels.CloudRequestPath }",
 		},
 		"empty-path branch skipped when token is nil": {
@@ -831,6 +833,22 @@ func endpointRouteDriftFixtures() map[string][2]string {
 		"shadowed URL package qualifier": {
 			"\tresult := *baseURL",
 			"\turl := fakeURL{}\n\tresult := *baseURL",
+		},
+	}
+	maps.Copy(fixtures, endpointRouteAuthorityDriftFixtures(generatedPathAssignment))
+
+	return fixtures
+}
+
+func endpointRouteAuthorityDriftFixtures(generatedPathAssignment string) map[string][2]string {
+	return map[string][2]string{
+		"URL scheme mutation": {
+			generatedPathAssignment,
+			"result.Scheme = \"http\"\n\t\tresult.Path = dependencymodels.CloudRequestPath",
+		},
+		"URL user information mutation": {
+			generatedPathAssignment,
+			"result.User = nil\n\t\tresult.Path = dependencymodels.CloudRequestPath",
 		},
 	}
 }

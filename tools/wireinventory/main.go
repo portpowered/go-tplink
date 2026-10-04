@@ -79,7 +79,7 @@ func checkRepository(root string) error {
 		return err
 	}
 
-	generatedTypes, err := readGeneratedModelTypes(root)
+	generatedTypes, generatedScalars, err := readGeneratedWireModels(root)
 	if err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func checkRepository(root string) error {
 
 	uses := make(map[string]bool)
 
-	err = checkProductionFiles(paths, generatedMaps, wireValues, generatedTypes, uses)
+	err = checkProductionFiles(paths, generatedMaps, wireValues, generatedTypes, generatedScalars, uses)
 	if err != nil {
 		return err
 	}
@@ -199,6 +199,7 @@ func checkProductionFiles(
 	generatedMaps map[string]bool,
 	wireValues map[string]bool,
 	generatedTypes map[string]bool,
+	generatedScalars map[string]bool,
 	uses map[string]bool,
 ) error {
 	for _, path := range paths {
@@ -212,7 +213,7 @@ func checkProductionFiles(
 		}
 	}
 
-	return nil
+	return checkPackageWireProvenance(paths, generatedTypes, generatedScalars)
 }
 
 func checkProductionFile(path string, generatedMaps, wireValues, generatedTypes, uses map[string]bool) error {
