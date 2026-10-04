@@ -6,6 +6,9 @@ Earlier scoped lint and replay reviews do not certify these expanded requirement
 Keep every item open until two independent reviewers verify all items at the final
 implementation commit.
 
+The current evidence and review findings are recorded in
+[docs/independent-review.md](independent-review.md).
+
 - [ ] **1.** Keep the public client, examples, README, and site independent of any consuming application. Put application adapters and rollout plans in the consuming repository.
 - [ ] **2.** Document supported operations, authentication, errors, and transport injection with examples that match the exported API. Add customer-facing operation guides for important workflows, and distinguish verified behavior from synthetic examples and historical references.
 - [ ] **3.** Show Go version, CI, coverage, release, Go Reference, license, and documentation badges in the README. Replace every example repository value and point badges to live reports.

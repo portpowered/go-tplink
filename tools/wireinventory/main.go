@@ -79,7 +79,7 @@ func checkRepository(root string) error {
 		return err
 	}
 
-	generatedTypes, generatedScalars, err := readGeneratedWireModels(root)
+	generatedTypes, generatedScalars, scalarMetadata, err := readRepositoryModelInventory(root)
 	if err != nil {
 		return err
 	}
@@ -101,7 +101,8 @@ func checkRepository(root string) error {
 
 	uses := make(map[string]bool)
 
-	err = checkProductionFiles(paths, generatedMaps, wireValues, generatedTypes, generatedScalars, uses)
+	err = checkProductionFiles(paths, generatedMaps, wireValues, generatedTypes, generatedScalars,
+		scalarMetadata, uses)
 	if err != nil {
 		return err
 	}
@@ -112,6 +113,25 @@ func checkRepository(root string) error {
 	}
 
 	return requireGeneratedUses(uses)
+}
+
+func readRepositoryModelInventory(root string) (
+	map[string]bool,
+	map[string]bool,
+	generatedScalarMetadata,
+	error,
+) {
+	generatedTypes, generatedScalars, err := readGeneratedWireModels(root)
+	if err != nil {
+		return nil, nil, generatedScalarMetadata{}, err
+	}
+
+	scalarMetadata, err := readGeneratedScalarMetadata(root)
+	if err != nil {
+		return nil, nil, generatedScalarMetadata{}, err
+	}
+
+	return generatedTypes, generatedScalars, scalarMetadata, nil
 }
 
 func checkNetworkCallSites(root string, paths []string) error {
@@ -200,6 +220,7 @@ func checkProductionFiles(
 	wireValues map[string]bool,
 	generatedTypes map[string]bool,
 	generatedScalars map[string]bool,
+	scalarMetadata generatedScalarMetadata,
 	uses map[string]bool,
 ) error {
 	for _, path := range paths {
@@ -213,7 +234,7 @@ func checkProductionFiles(
 		}
 	}
 
-	return checkPackageWireProvenance(paths, generatedTypes, generatedScalars)
+	return checkPackageWireProvenance(paths, generatedTypes, generatedScalars, scalarMetadata)
 }
 
 func checkProductionFile(path string, generatedMaps, wireValues, generatedTypes, uses map[string]bool) error {

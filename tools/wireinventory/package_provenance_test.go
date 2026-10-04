@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"go/parser"
 	"go/token"
 	"os"
@@ -51,16 +52,17 @@ func r2Build(values url.Values) {
 	})
 
 	err := checkPackageWireProvenance(paths, map[string]bool{loginCloudRequestModel: true},
-		map[string]bool{"LoginCloudRequestMethod": true})
+		map[string]bool{"LoginCloudRequestMethod": true}, readCurrentGeneratedScalarMetadata(t))
 
 	if err == nil || !strings.Contains(err.Error(), "fixed scalar") ||
 		!strings.Contains(err.Error(), useSourceFilename) {
 		t.Fatalf("checkPackageWireProvenance() error = %v, want sibling scalar rejection in use.go", err)
 	}
 
-	wireValues, generatedMaps, generatedTypes, generatedScalars := readCurrentGeneratedInventory(t)
+	wireValues, generatedMaps, generatedTypes, generatedScalars, scalarMetadata := readCurrentGeneratedInventory(t)
 
-	err = checkProductionFiles(paths, generatedMaps, wireValues, generatedTypes, generatedScalars, make(map[string]bool))
+	err = checkProductionFiles(paths, generatedMaps, wireValues, generatedTypes, generatedScalars,
+		scalarMetadata, make(map[string]bool))
 	if err == nil || !strings.Contains(err.Error(), useSourceFilename) {
 		t.Fatalf("checkProductionFiles() error = %v, want package-scoped production rejection in use.go", err)
 	}
@@ -103,19 +105,239 @@ import (
   "net/url"
   "github.com/portpowered/go-tplink/pkg/dependencymodels"
 )
-func r2BuildFromCaller(value dependencymodels.LoginCloudRequestMethod, values url.Values) {
+func BuildFromCaller(value dependencymodels.LoginCloudRequestMethod, values url.Values) {
   _ = dependencymodels.LoginCloudRequest{Method: r2MethodFromCaller(value)}
   _ = r2QueryFromCaller(values).Encode()
 }
 `,
 	})
 
-	wireValues, generatedMaps, generatedTypes, generatedScalars := readCurrentGeneratedInventory(t)
+	wireValues, generatedMaps, generatedTypes, generatedScalars, scalarMetadata := readCurrentGeneratedInventory(t)
 
-	err := checkProductionFiles(paths, generatedMaps, wireValues, generatedTypes, generatedScalars, make(map[string]bool))
+	err := checkProductionFiles(paths, generatedMaps, wireValues, generatedTypes, generatedScalars,
+		scalarMetadata, make(map[string]bool))
 	if err != nil {
 		t.Fatalf("checkProductionFiles() rejected caller-owned values: %v", err)
 	}
+}
+
+func TestGeneratedScalarMetadataIncludesEnumFieldsAndConstants(t *testing.T) {
+	t.Parallel()
+
+	metadata := readCurrentGeneratedScalarMetadata(t)
+	if !metadata.constants[dependencymodelsImportPath]["MethodLogin"] {
+		t.Fatal("generated scalar metadata omitted dependencymodels.MethodLogin")
+	}
+
+	if !metadata.fields[dependencymodelsImportPath][loginCloudRequestModel]["Method"] {
+		t.Fatal("generated scalar metadata omitted LoginCloudRequest.Method")
+	}
+}
+
+func TestPackageScalarProvenanceRejectsUnresolvedPackageAndMethodValues(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]map[string]string{
+		"sibling package global": map[string]string{
+			helperSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+var r2GlobalMethod dm.LoginCloudRequestMethod = "r2-unregistered-global"
+func r2GlobalHelper() dm.LoginCloudRequestMethod { return r2GlobalMethod }
+`,
+			useSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func r2Build() { _ = dm.LoginCloudRequest{Method: r2GlobalHelper()} }
+`,
+		},
+		"sibling receiver method": map[string]string{
+			helperSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+type r2MethodSource struct{}
+func (r2MethodSource) r2Method() dm.LoginCloudRequestMethod { return "r2-unregistered-method" }
+`,
+			useSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func r2Build() { _ = dm.LoginCloudRequest{Method: (r2MethodSource{}).r2Method()} }
+`,
+		},
+		"sibling callback return": map[string]string{
+			helperSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func r2CallbackValue() dm.LoginCloudRequestMethod { return "r2-unregistered-callback" }
+func r2Callback() func() dm.LoginCloudRequestMethod { return r2CallbackValue }
+`,
+			useSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func r2Build() { _ = dm.LoginCloudRequest{Method: r2Callback()()} }
+`,
+		},
+		"recursive fixed fallback": map[string]string{
+			helperSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func r2RecursiveFixed(flag bool) dm.LoginCloudRequestMethod {
+  if flag { return "r2-recursive-unregistered" }
+  return r2RecursiveFixed(!flag)
+}
+`,
+			useSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func r2Build() { _ = dm.LoginCloudRequest{Method: r2RecursiveFixed(true)} }
+`,
+		},
+	}
+
+	for name, files := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assertProductionScalarFixtureRejected(t, files)
+		})
+	}
+}
+
+func TestPackageScalarProvenanceRejectsLongSiblingHelperChain(t *testing.T) {
+	t.Parallel()
+
+	var first strings.Builder
+
+	first.WriteString("package fixture\nimport dm \"github.com/portpowered/go-tplink/pkg/dependencymodels\"\n")
+
+	var second strings.Builder
+
+	second.WriteString("package fixture\nimport dm \"github.com/portpowered/go-tplink/pkg/dependencymodels\"\n")
+
+	for index := range 80 {
+		builder := &first
+		if index%2 == 1 {
+			builder = &second
+		}
+
+		if index == 0 {
+			fmt.Fprintf(builder, "func r2Chain0() dm.LoginCloudRequestMethod { return \"r2-long-chain\" }\n")
+
+			continue
+		}
+
+		fmt.Fprintf(builder, "func r2Chain%d() dm.LoginCloudRequestMethod { return r2Chain%d() }\n", index, index-1)
+	}
+
+	assertProductionScalarFixtureRejected(t, map[string]string{
+		"chain-a.go": first.String(),
+		"chain-b.go": second.String(),
+		useSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func r2Build() { _ = dm.LoginCloudRequest{Method: r2Chain79()} }
+`,
+	})
+}
+
+func TestPackageScalarProvenanceAcceptsCallerAndGeneratedValues(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	paths := writePackageSourceFiles(t, root, map[string]string{
+		helperSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func r2CallerMethod(value dm.LoginCloudRequestMethod) (result dm.LoginCloudRequestMethod) {
+  result = value
+  return
+}
+func r2GeneratedMethod() dm.LoginCloudRequestMethod { return dm.MethodLogin }
+`,
+		useSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func Build(value dm.LoginCloudRequestMethod) {
+  _ = dm.LoginCloudRequest{Method: r2CallerMethod(value)}
+  _ = dm.LoginCloudRequest{Method: r2GeneratedMethod()}
+}
+`,
+	})
+
+	err := checkProductionScalarFiles(t, paths)
+	if err != nil {
+		t.Fatalf("checkProductionFiles() rejected caller or generated values: %v", err)
+	}
+}
+
+func TestPackageScalarProvenanceAcceptsCallerSuppliedCallbacks(t *testing.T) {
+	t.Parallel()
+
+	paths := writePackageSourceFiles(t, t.TempDir(), map[string]string{
+		helperSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func r2ForwardCallback(callback func/*helper*/ () dm.LoginCloudRequestMethod) dm.LoginCloudRequestMethod {
+  return callback()
+}
+`,
+		useSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func BuildFromCaller(callback func/*caller*/ () dm.LoginCloudRequestMethod) {
+  _ = dm.LoginCloudRequest{Method: r2ForwardCallback(callback)}
+}
+`,
+	})
+
+	err := checkProductionScalarFiles(t, paths)
+	if err != nil {
+		t.Fatalf("checkProductionFiles() rejected caller-supplied callbacks: %v", err)
+	}
+}
+
+func TestPackageScalarProvenanceAcceptsCallerSuppliedReturnedCallback(t *testing.T) {
+	t.Parallel()
+
+	paths := writePackageSourceFiles(t, t.TempDir(), map[string]string{
+		useSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func BuildFromCaller(callbackFactory func/*factory*/ () func/*method*/ () dm.LoginCloudRequestMethod) {
+  _ = dm.LoginCloudRequest{Method: callbackFactory()()}
+}
+`,
+	})
+
+	err := checkProductionScalarFiles(t, paths)
+	if err != nil {
+		t.Fatalf("checkProductionFiles() rejected a caller-supplied returned callback: %v", err)
+	}
+}
+
+func TestPackageScalarProvenanceRejectsConditionalNamedCallbackResult(t *testing.T) {
+	t.Parallel()
+
+	assertProductionScalarFixtureRejected(t, map[string]string{
+		helperSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func r2KnownCallback() dm.LoginCloudRequestMethod { return dm.MethodLogin }
+func r2ConditionalCallback(flag bool) (result func/*conditional*/ () dm.LoginCloudRequestMethod) {
+  if flag { result = r2KnownCallback }
+  return
+}
+`,
+		useSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func r2Build(flag bool) { _ = dm.LoginCloudRequest{Method: r2ConditionalCallback(flag)()} }
+`,
+	})
+}
+
+func assertProductionScalarFixtureRejected(t *testing.T, files map[string]string) {
+	t.Helper()
+
+	root := t.TempDir()
+	paths := writePackageSourceFiles(t, root, files)
+
+	err := checkProductionScalarFiles(t, paths)
+	if err == nil || !strings.Contains(err.Error(), generatedScalarMessage) {
+		t.Fatalf("checkProductionFiles() error = %v, want unresolved generated scalar rejection", err)
+	}
+}
+
+func checkProductionScalarFiles(t *testing.T, paths []string) error {
+	t.Helper()
+
+	wireValues, generatedMaps, generatedTypes, generatedScalars, scalarMetadata := readCurrentGeneratedInventory(t)
+
+	return checkProductionFiles(paths, generatedMaps, wireValues, generatedTypes, generatedScalars,
+		scalarMetadata, make(map[string]bool))
 }
 
 func TestProductionWireMapGateRejectsSiblingHelperEscape(t *testing.T) {
@@ -137,8 +359,9 @@ func r2BuildQuery(values url.Values) {
 `,
 	})
 
-	wireValues, generatedMaps, generatedTypes, generatedScalars := readCurrentGeneratedInventory(t)
-	err := checkProductionFiles(paths, generatedMaps, wireValues, generatedTypes, generatedScalars, make(map[string]bool))
+	wireValues, generatedMaps, generatedTypes, generatedScalars, scalarMetadata := readCurrentGeneratedInventory(t)
+	err := checkProductionFiles(paths, generatedMaps, wireValues, generatedTypes, generatedScalars,
+		scalarMetadata, make(map[string]bool))
 
 	if err == nil || !strings.Contains(err.Error(), "unverified helper") ||
 		!strings.Contains(err.Error(), useSourceFilename) {
@@ -325,7 +548,9 @@ func TestHTTPRequestConstructorMutationGateRejectsMutationsAndEscapes(t *testing
 	}
 }
 
-func readCurrentGeneratedInventory(t *testing.T) (map[string]bool, map[string]bool, map[string]bool, map[string]bool) {
+func readCurrentGeneratedInventory(
+	t *testing.T,
+) (map[string]bool, map[string]bool, map[string]bool, map[string]bool, generatedScalarMetadata) {
 	t.Helper()
 
 	root := filepath.Clean(filepath.Join("..", ".."))
@@ -345,7 +570,25 @@ func readCurrentGeneratedInventory(t *testing.T) (map[string]bool, map[string]bo
 		t.Fatal(err)
 	}
 
-	return wireValues, generatedMaps, generatedTypes, generatedScalars
+	scalarMetadata, err := readGeneratedScalarMetadata(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return wireValues, generatedMaps, generatedTypes, generatedScalars, scalarMetadata
+}
+
+func readCurrentGeneratedScalarMetadata(t *testing.T) generatedScalarMetadata {
+	t.Helper()
+
+	root := filepath.Clean(filepath.Join("..", ".."))
+
+	metadata, err := readGeneratedScalarMetadata(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return metadata
 }
 
 func writePackageSourceFiles(t *testing.T, root string, files map[string]string) []string {

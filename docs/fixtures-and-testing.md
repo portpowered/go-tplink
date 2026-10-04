@@ -46,13 +46,15 @@ Run these from the repository root:
 | Build | `make build` | No | Builds all module packages |
 | Test | `make test` | No | Runs `go test -race ./...`; use only synthetic/offline test data |
 | Format | `make fmt` | No | Runs `go fmt ./...` |
-| Lint | `make lint` | No | Runs golangci-lint v2.14.0 with every linter enabled by `linters.default: all` |
+| Lint | `make lint` | No | Uses `GOLANGCI_LINT` or `golangci-lint` from `PATH`; configuration enables every linter with `linters.default: all` |
 | Combined check | `make check` | No | Runs lint, build, and test |
 | API compatibility report | `make api-compatibility` | No | Compares exported API with the previous release when one exists |
 
-The CI workflow installs golangci-lint v2.14.0 and runs the full-repository
-lint command as a blocking job. The configuration does not disable
-linters or filter findings through a baseline.
+Locally, `make lint` and `make check` use the executable selected by
+`GOLANGCI_LINT`, which defaults to `golangci-lint` from `PATH`. The CI and
+release workflows pin golangci-lint v2.14.0 and run the full-repository lint
+command as a blocking job. The configuration does not disable linters or filter
+findings through a baseline.
 
 The [current checklist](template-checklist.md) and
 [review record](independent-review.md) distinguish historical scoped signoffs

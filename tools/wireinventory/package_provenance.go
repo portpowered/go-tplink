@@ -130,7 +130,11 @@ func generatedScalarUnderlyingType(name string, types map[string]ast.Expr, visit
 	return ok && generatedScalarUnderlyingType(identifier.Name, types, visiting)
 }
 
-func checkPackageWireProvenance(paths []string, generatedTypes, generatedScalars map[string]bool) error {
+func checkPackageWireProvenance(
+	paths []string,
+	generatedTypes, generatedScalars map[string]bool,
+	scalarMetadata generatedScalarMetadata,
+) error {
 	packages := make(map[string][]packageProvenanceFile)
 
 	for _, path := range paths {
@@ -164,6 +168,11 @@ func checkPackageWireProvenance(paths []string, generatedTypes, generatedScalars
 			if err != nil {
 				return err
 			}
+		}
+
+		err := checkPackageScalarProvenance(files, generatedTypes, generatedScalars, scalarMetadata)
+		if err != nil {
+			return err
 		}
 	}
 

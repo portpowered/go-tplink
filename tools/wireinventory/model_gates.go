@@ -527,7 +527,7 @@ func functionReturnsFixedScalar(
 	body *ast.BlockStmt,
 	aliases, fixedFunctions map[token.Pos]bool,
 ) bool {
-	resultNames := functionResultNames(functionType, 0)
+	resultNames := functionResultNames(functionType)
 	found := false
 
 	ast.Inspect(body, func(node ast.Node) bool {
@@ -566,31 +566,17 @@ func functionReturnsFixedScalar(
 	return found
 }
 
-func functionResultNames(functionType *ast.FuncType, resultIndex int) []*ast.Ident {
-	if functionType == nil || functionType.Results == nil {
+func functionResultNames(functionType *ast.FuncType) []*ast.Ident {
+	if functionType == nil || functionType.Results == nil || len(functionType.Results.List) == 0 {
 		return nil
 	}
 
-	index := 0
-
-	for _, field := range functionType.Results.List {
-		count := len(field.Names)
-		if count == 0 {
-			count = 1
-		}
-
-		if resultIndex >= index && resultIndex < index+count {
-			if len(field.Names) == 0 {
-				return nil
-			}
-
-			return []*ast.Ident{field.Names[resultIndex-index]}
-		}
-
-		index += count
+	field := functionType.Results.List[0]
+	if len(field.Names) == 0 {
+		return nil
 	}
 
-	return nil
+	return []*ast.Ident{field.Names[0]}
 }
 
 func collectPackageScalarAliases(
@@ -937,7 +923,7 @@ func returnedFunctionExpressions(file *ast.File, function ast.Node) []ast.Expr {
 		return nil
 	}
 
-	resultNames := functionResultNames(functionType, 0)
+	resultNames := functionResultNames(functionType)
 
 	resultPositions := make(map[token.Pos]bool, len(resultNames))
 
