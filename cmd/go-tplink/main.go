@@ -45,6 +45,7 @@ func main() {
 	err := execute()
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
+
 		os.Exit(1)
 	}
 }

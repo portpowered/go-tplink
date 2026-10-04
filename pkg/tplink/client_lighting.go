@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/portpowered/go-tplink/pkg/generatedwire"
+	"github.com/portpowered/go-tplink/pkg/dependencymodels"
 	"github.com/portpowered/go-tplink/pkg/tplinkmodels"
 )
 
@@ -21,13 +21,18 @@ func (client *Client) transitionLightState(
 		return err
 	}
 
-	return checkPassthroughCommandError(data, NamespaceLightingService, CmdTransitionLightState, operation)
+	return checkPassthroughCommandError(
+		data,
+		dependencymodels.NamespaceLightingService,
+		dependencymodels.CmdTransitionLightState,
+		operation,
+	)
 }
 
 func lightingTransitionCommand(
-	state generatedwire.LightTransitionState,
-) generatedwire.LightingTransitionLightStateCommand {
-	var command generatedwire.LightingTransitionLightStateCommand
+	state *dependencymodels.LightTransitionState,
+) dependencymodels.LightingTransitionLightStateCommand {
+	var command dependencymodels.LightingTransitionLightStateCommand
 
 	command.SmartlifeIotSmartbulbLightingservice.TransitionLightState = state
 
@@ -38,14 +43,16 @@ func lightingTransitionCommand(
 // This is the low-level method; prefer the specific methods below.
 func (client *Client) SetLightState(ctx context.Context, request SetLightStateRequest) error {
 	if request.State == nil {
-		command := map[string]any{
-			NamespaceLightingService: map[string]any{CmdTransitionLightState: nil},
-		}
-
-		return client.transitionLightState(ctx, "SetLightState", request.Auth, request.DeviceID, command)
+		return client.transitionLightState(
+			ctx,
+			"SetLightState",
+			request.Auth,
+			request.DeviceID,
+			lightingTransitionCommand(nil),
+		)
 	}
 
-	var state generatedwire.LightTransitionState
+	var state dependencymodels.LightTransitionState
 
 	state.AdditionalProperties = request.State
 
@@ -54,13 +61,13 @@ func (client *Client) SetLightState(ctx context.Context, request SetLightStateRe
 		"SetLightState",
 		request.Auth,
 		request.DeviceID,
-		lightingTransitionCommand(state),
+		lightingTransitionCommand(&state),
 	)
 }
 
 // SetBrightness sets the brightness of a bulb device (0-100).
 func (client *Client) SetBrightness(ctx context.Context, request SetBrightnessRequest) error {
-	var state generatedwire.LightTransitionState
+	var state dependencymodels.LightTransitionState
 
 	state.Brightness = &request.Brightness
 
@@ -69,13 +76,13 @@ func (client *Client) SetBrightness(ctx context.Context, request SetBrightnessRe
 		"SetBrightness",
 		request.Auth,
 		request.DeviceID,
-		lightingTransitionCommand(state),
+		lightingTransitionCommand(&state),
 	)
 }
 
 // SetColorTemp sets the color temperature of a bulb device in Kelvin.
 func (client *Client) SetColorTemp(ctx context.Context, request SetColorTempRequest) error {
-	var state generatedwire.LightTransitionState
+	var state dependencymodels.LightTransitionState
 
 	state.ColorTemp = &request.ColorTemp
 
@@ -84,13 +91,13 @@ func (client *Client) SetColorTemp(ctx context.Context, request SetColorTempRequ
 		"SetColorTemp",
 		request.Auth,
 		request.DeviceID,
-		lightingTransitionCommand(state),
+		lightingTransitionCommand(&state),
 	)
 }
 
 // SetColor sets the hue (0-360) and saturation (0-100) of a bulb device.
 func (client *Client) SetColor(ctx context.Context, request SetColorRequest) error {
-	var state generatedwire.LightTransitionState
+	var state dependencymodels.LightTransitionState
 
 	state.Hue = &request.Hue
 
@@ -101,7 +108,7 @@ func (client *Client) SetColor(ctx context.Context, request SetColorRequest) err
 		"SetColor",
 		request.Auth,
 		request.DeviceID,
-		lightingTransitionCommand(state),
+		lightingTransitionCommand(&state),
 	)
 }
 
@@ -110,22 +117,27 @@ func (client *Client) GetLightState(
 	ctx context.Context,
 	request GetLightStateRequest,
 ) (tplinkmodels.LightState, error) {
-	var cmd generatedwire.LightingGetLightStateCommand
+	var cmd dependencymodels.LightingGetLightStateCommand
 
 	cmd.SmartlifeIotSmartbulbLightingservice.GetLightState =
-		generatedwire.LightingGetLightStateCommandSmartlifeIotSmartbulbLightingserviceGetLightStateEmpty
+		dependencymodels.LightingGetLightStateCommandSmartlifeIotSmartbulbLightingserviceGetLightStateEmpty
 
 	data, err := client.doPassthrough(ctx, "GetLightState", request.Auth, request.DeviceID, cmd)
 	if err != nil {
 		return tplinkmodels.LightState{}, err
 	}
 
-	_, err = passthroughCommandResult(data, NamespaceLightingService, CmdGetLightState, "GetLightState")
+	_, err = passthroughCommandResult(
+		data,
+		dependencymodels.NamespaceLightingService,
+		dependencymodels.CmdGetLightState,
+		"GetLightState",
+	)
 	if err != nil {
 		return tplinkmodels.LightState{}, err
 	}
 
-	var parsed generatedwire.LightingCommandResult
+	var parsed dependencymodels.LightingCommandResult
 
 	decodeErr := json.Unmarshal(data, &parsed)
 	if decodeErr != nil {
@@ -156,7 +168,7 @@ func (client *Client) GetLightState(
 		Mode:       valueOrZero(wireState.Mode),
 		ErrCode:    valueOrZero(wireState.ErrCode),
 	}
-	if lightState.ErrCode != 0 {
+	if lightState.ErrCode != dependencymodels.DeviceErrorOK {
 		return tplinkmodels.LightState{}, tplinkmodels.NewDeviceError(lightState.ErrCode, "get_light_state failed")
 	}
 

@@ -15,6 +15,7 @@ linters:
           allow:
             - $gostd
             - github.com/portpowered/go-tplink
+            - gopkg.in/yaml.v3
 
         Tests:
           list-mode: strict
@@ -24,6 +25,7 @@ linters:
             - $gostd
             - github.com/portpowered/go-tplink
             - github.com/stretchr/testify
+            - gopkg.in/yaml.v3
 
         Generated:
           list-mode: strict

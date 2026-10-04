@@ -197,6 +197,7 @@ func (store credentialStore) save(credentials storedCredentials) error {
 		return fmt.Errorf("protect credential directory: %w", err)
 	}
 
+	//nolint:gosec // Login deliberately persists the token in a private mode-0600 file.
 	data, err := json.MarshalIndent(credentials, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode saved credentials: %w", err)
@@ -269,6 +270,7 @@ func (store credentialStore) remove() error {
 }
 
 func writeProtectedExport(path string, credentials storedCredentials) error {
+	//nolint:gosec // Explicit export is requested by the caller and the file is created mode 0600.
 	data, err := json.MarshalIndent(credentials, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode credential export: %w", err)

@@ -7,23 +7,20 @@
 package tplink
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
 	"sync"
 
-	"github.com/portpowered/go-tplink/pkg/generatedwire"
+	"github.com/portpowered/go-tplink/pkg/dependencies/cloud"
+	"github.com/portpowered/go-tplink/pkg/dependencymodels"
 	"github.com/portpowered/go-tplink/pkg/tplinkmodels"
 )
-
-const maxResponseBytes int64 = 1 << 20
 
 var (
 	errNilHTTPClient  = errors.New("HTTP client must not be nil")
@@ -35,9 +32,7 @@ var (
 // HTTPDoer is the part of net/http.Client used by Client.
 //
 // Implementations shared by multiple goroutines must support concurrent calls.
-type HTTPDoer interface {
-	Do(request *http.Request) (*http.Response, error)
-}
+type HTTPDoer = cloud.HTTPDoer
 
 // Client is the TP-Link Cloud API client.
 type Client struct {
@@ -108,7 +103,7 @@ func isNilHTTPDoer(client HTTPDoer) bool {
 
 	value := reflect.ValueOf(client)
 	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
 		return value.IsNil()
 	case reflect.Invalid, reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16,
 		reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16,
@@ -171,19 +166,6 @@ func (client *Client) doCloudRequest(
 	cloudRequest any,
 	auth *AuthContext,
 ) ([]byte, error) {
-	request, err := client.newCloudHTTPRequest(ctx, cloudRequest, auth)
-	if err != nil {
-		return nil, err
-	}
-
-	return client.sendCloudRequest(operation, request)
-}
-
-func (client *Client) newCloudHTTPRequest(
-	ctx context.Context,
-	cloudRequest any,
-	auth *AuthContext,
-) (*http.Request, error) {
 	if client == nil {
 		return nil, tplinkmodels.NewConfigurationError("client is not initialized", nil)
 	}
@@ -204,143 +186,23 @@ func (client *Client) newCloudHTTPRequest(
 		return nil, tplinkmodels.NewConfigurationError("client is not initialized", nil)
 	}
 
-	bodyBytes, err := json.Marshal(cloudRequest)
-	if err != nil {
-		return nil, tplinkmodels.NewInvalidRequestError("failed to marshal request", err)
-	}
-
-	requestURL := *client.baseURL
+	var token *string
 
 	if auth != nil {
 		if auth.AccessToken == "" {
 			return nil, tplinkmodels.NewTokenNotSetError("no token supplied for this request")
 		}
 
-		query := requestURL.Query()
-		query.Set("token", auth.AccessToken)
-		requestURL.RawQuery = query.Encode()
+		token = &auth.AccessToken
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL.String(), bytes.NewReader(bodyBytes))
+	response, err := cloud.Send(ctx, client.httpClient, client.baseURL, operation, cloudRequest, token)
 	if err != nil {
-		return nil, tplinkmodels.NewInvalidRequestError("failed to create HTTP request", err)
+		return nil, fmt.Errorf("%w", err)
 	}
 
-	request.Header.Set("Content-Type", "application/json")
-
-	return request, nil
+	return response, nil
 }
-
-func (client *Client) sendCloudRequest(operation string, request *http.Request) ([]byte, error) {
-	response, err := client.httpClient.Do(request)
-	if err != nil {
-		closeResponseBody(response)
-
-		return nil, tplinkmodels.NewNetworkError("request failed", redactTransportError(err))
-	}
-
-	if response == nil {
-		return nil, tplinkmodels.NewInvalidResponseError(operation, "HTTP client returned a nil response", nil)
-	}
-
-	if response.Body != nil {
-		defer func() { _ = response.Body.Close() }()
-	}
-
-	return readCloudResponse(operation, response)
-}
-
-func closeResponseBody(response *http.Response) {
-	if response != nil && response.Body != nil {
-		_ = response.Body.Close()
-	}
-}
-
-func readCloudResponse(operation string, response *http.Response) ([]byte, error) {
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return nil, &tplinkmodels.HTTPStatusError{
-			Operation:  operation,
-			StatusCode: response.StatusCode,
-		}
-	}
-
-	if response.Body == nil {
-		return nil, tplinkmodels.NewInvalidResponseError(operation, "HTTP response body is nil", nil)
-	}
-
-	responseBytes, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
-	if err != nil {
-		return nil, tplinkmodels.NewNetworkError("failed to read response body", err)
-	}
-
-	if int64(len(responseBytes)) > maxResponseBytes {
-		return nil, &tplinkmodels.ResponseTooLargeError{Operation: operation, Limit: maxResponseBytes}
-	}
-
-	return responseBytes, nil
-}
-
-func redactTransportError(err error) error {
-	var requestError *url.Error
-	if !errors.As(err, &requestError) {
-		return err
-	}
-
-	return &url.Error{
-		Op:  requestError.Op,
-		URL: redactURL(requestError.URL),
-		Err: requestError.Err,
-	}
-}
-
-func redactURL(value string) string {
-	parsed, err := url.Parse(value)
-	if err != nil {
-		if queryStart := strings.IndexByte(value, '?'); queryStart >= 0 {
-			return value[:queryStart] + "?[REDACTED]"
-		}
-
-		return value
-	}
-
-	query := parsed.Query()
-	if query.Has("token") {
-		query.Set("token", "[REDACTED]")
-		parsed.RawQuery = query.Encode()
-	}
-
-	return parsed.String()
-}
-
-func checkCloudError(data []byte, operation string) error {
-	var response generatedwire.CloudResponse
-
-	err := json.Unmarshal(data, &response)
-	if err != nil {
-		return tplinkmodels.NewInvalidResponseError(operation, "failed to parse cloud response", err)
-	}
-
-	errorCode := valueOrZero(response.ErrorCode)
-	if errorCode == 0 {
-		return nil
-	}
-
-	message := valueOrZero(response.Msg)
-
-	switch errorCode {
-	case -20004:
-		return tplinkmodels.NewRateLimitError(message)
-	case -20651:
-		return tplinkmodels.NewTokenExpiredError(message)
-	case -20104:
-		return tplinkmodels.NewParameterError(message)
-	case -20601:
-		return tplinkmodels.NewAuthenticationError(message, errorCode)
-	default:
-		return tplinkmodels.NewCloudAPIError(errorCode, message)
-	}
-}
-
 func (client *Client) doPassthrough(
 	ctx context.Context,
 	operation string,
@@ -353,9 +215,9 @@ func (client *Client) doPassthrough(
 		return nil, tplinkmodels.NewInvalidRequestError("failed to marshal device command", err)
 	}
 
-	cloudRequest := generatedwire.PassthroughCloudRequest{
-		Method: generatedwire.Passthrough,
-		Params: generatedwire.PassthroughParams{
+	cloudRequest := dependencymodels.PassthroughCloudRequest{
+		Method: dependencymodels.MethodPassthrough,
+		Params: dependencymodels.PassthroughParams{
 			DeviceId:    deviceID,
 			RequestData: string(commandBytes),
 		},
@@ -363,15 +225,15 @@ func (client *Client) doPassthrough(
 
 	responseBytes, err := client.doCloudRequest(ctx, operation, cloudRequest, &auth)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w", err)
 	}
 
-	err = checkCloudError(responseBytes, operation)
+	err = cloud.CheckError(responseBytes, operation)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w", err)
 	}
 
-	var response generatedwire.PassthroughResponse
+	var response dependencymodels.PassthroughResponse
 
 	err = json.Unmarshal(responseBytes, &response)
 	if err != nil {
@@ -387,12 +249,12 @@ func (client *Client) doPassthrough(
 }
 
 func checkDeviceError(data []byte) error {
-	var response generatedwire.DeviceCommandError
+	var response dependencymodels.DeviceCommandError
 
 	err := json.Unmarshal(data, &response)
 
-	if err == nil && response.ErrCode != 0 {
-		if response.ErrCode == -1 {
+	if err == nil && response.ErrCode != dependencymodels.DeviceErrorOK {
+		if response.ErrCode == dependencymodels.DeviceErrorUnsupported {
 			return tplinkmodels.NewUnsupportedOperationError(valueOrZero(response.ErrMsg))
 		}
 

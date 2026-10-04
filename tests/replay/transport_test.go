@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -468,13 +469,7 @@ func compareFixtureValues(label, name string, actual, expected []string) error {
 }
 
 func containsString(values []string, expected string) bool {
-	for _, value := range values {
-		if value == expected {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(values, expected)
 }
 
 func matchFixtureBody(body []byte, expectedBodies []json.RawMessage) error {

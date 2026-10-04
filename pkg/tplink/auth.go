@@ -3,8 +3,10 @@ package tplink
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
-	"github.com/portpowered/go-tplink/pkg/generatedwire"
+	"github.com/portpowered/go-tplink/pkg/dependencies/cloud"
+	"github.com/portpowered/go-tplink/pkg/dependencymodels"
 	"github.com/portpowered/go-tplink/pkg/tplinkmodels"
 )
 
@@ -14,13 +16,13 @@ import (
 // This is the only method that does not require an auth token. The returned
 // token should be supplied through AuthContext on each subsequent request.
 func (client *Client) Login(ctx context.Context, request LoginRequest) (tplinkmodels.LoginResult, error) {
-	cloudReq := generatedwire.LoginCloudRequest{
-		Method: generatedwire.Login,
-		Params: generatedwire.LoginParams{
-			AppType:       generatedwire.TapoAndroid,
+	cloudReq := dependencymodels.LoginCloudRequest{
+		Method: dependencymodels.MethodLogin,
+		Params: dependencymodels.LoginParams{
+			AppType:       dependencymodels.AppType,
 			CloudUserName: request.Email,
 			CloudPassword: &request.Password,
-			TerminalUUID:  generatedwire.GoTplinkClient,
+			TerminalUUID:  dependencymodels.TerminalUUID,
 		},
 	}
 
@@ -29,12 +31,12 @@ func (client *Client) Login(ctx context.Context, request LoginRequest) (tplinkmo
 		return tplinkmodels.LoginResult{}, err
 	}
 
-	err = checkCloudError(respBytes, "Login")
+	err = cloud.CheckError(respBytes, "Login")
 	if err != nil {
-		return tplinkmodels.LoginResult{}, err
+		return tplinkmodels.LoginResult{}, fmt.Errorf("%w", err)
 	}
 
-	var loginResp generatedwire.LoginResponse
+	var loginResp dependencymodels.LoginResponse
 
 	err = json.Unmarshal(respBytes, &loginResp)
 	if err != nil {
@@ -46,8 +48,9 @@ func (client *Client) Login(ctx context.Context, request LoginRequest) (tplinkmo
 	}
 
 	if loginResp.Result == nil {
-		//nolint:exhaustruct // A missing provider result maps to the zero public result.
-		return tplinkmodels.LoginResult{}, nil
+		var result tplinkmodels.LoginResult
+
+		return result, nil
 	}
 
 	return tplinkmodels.LoginResult{

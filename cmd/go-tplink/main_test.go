@@ -17,10 +17,14 @@ import (
 )
 
 const (
-	testBaseURL  = "https://api.example.test"
-	testToken    = "session-token-secret"
-	testEmail    = "person@example.com"
-	testPassword = "password-not-output"
+	testBaseURL     = "https://api.example.test"
+	testToken       = "session-token-secret"
+	testEmail       = "person@example.com"
+	testPassword    = "password-not-output"
+	testAuthCommand = "auth"
+	testJSONFlag    = "--json"
+	testBulbCommand = "bulb"
+	testBulbDevice  = "bulb-1"
 )
 
 const loginRequestBody = `{"method":"login","params":{"appType":"Tapo_Android",` +
@@ -247,7 +251,7 @@ func TestLoginUsesPairedRequestAndStoresTokenWithoutPrintingSecrets(t *testing.T
 		}
 	}
 
-	output, err := runCommand(context.Background(), t, deps, []string{"auth", "login"})
+	output, err := runCommand(context.Background(), t, deps, []string{testAuthCommand, "login"})
 	if err != nil {
 		t.Fatalf("login failed: %v", err)
 	}
@@ -301,7 +305,7 @@ func TestLoginAuthFailureRedactsSecretsAndClosesClient(t *testing.T) {
 		return ""
 	}
 
-	_, err := runCommand(context.Background(), t, deps, []string{"auth", "login"})
+	_, err := runCommand(context.Background(), t, deps, []string{testAuthCommand, "login"})
 	if err == nil {
 		t.Fatal("login succeeded despite a paired authentication failure")
 	}
@@ -342,7 +346,9 @@ func TestDevicesListAndPlugStateConsumePairedExchanges(t *testing.T) {
 	}}}
 	listDeps, listClient := dependenciesForTransport(t, tokenPath, listTransport)
 
-	listOutput, err := runCommand(context.Background(), t, listDeps, []string{"devices", "list", "--json"})
+	listOutput, err := runCommand(
+		context.Background(), t, listDeps, []string{"devices", "list", testJSONFlag},
+	)
 	if err != nil {
 		t.Fatalf("list devices: %v", err)
 	}
@@ -367,7 +373,9 @@ func TestDevicesListAndPlugStateConsumePairedExchanges(t *testing.T) {
 	}}}
 	stateDeps, stateClient := dependenciesForTransport(t, tokenPath, stateTransport)
 
-	stateOutput, err := runCommand(context.Background(), t, stateDeps, []string{"plug", "state", "--json", "plug-1"})
+	stateOutput, err := runCommand(
+		context.Background(), t, stateDeps, []string{"plug", "state", testJSONFlag, "plug-1"},
+	)
 	if err != nil {
 		t.Fatalf("read plug state: %v", err)
 	}
@@ -400,35 +408,35 @@ func TestBulbReadControlAndAliasUsePairedRequests(t *testing.T) {
 	}{
 		{
 			name:       "bulb state",
-			args:       []string{"bulb", "state", "--json", "bulb-1"},
+			args:       []string{testBulbCommand, "state", testJSONFlag, testBulbDevice},
 			request:    bulbStateRequestBody,
 			response:   bulbStateResponseBody,
 			wantOutput: `"brightness": 73`,
 		},
 		{
 			name:       "bulb brightness",
-			args:       []string{"bulb", "brightness", "bulb-1", "65"},
+			args:       []string{testBulbCommand, "brightness", testBulbDevice, "65"},
 			request:    bulbBrightnessRequestBody,
 			response:   bulbBrightnessResponseBody,
 			wantOutput: "Bulb brightness request acknowledged",
 		},
 		{
 			name:       "bulb color temperature",
-			args:       []string{"bulb", "color-temp", "bulb-1", "4000"},
+			args:       []string{testBulbCommand, "color-temp", testBulbDevice, "4000"},
 			request:    bulbColorTempRequestBody,
 			response:   bulbMutationResponseBody,
 			wantOutput: "Bulb color temperature request acknowledged",
 		},
 		{
 			name:       "bulb hue and saturation",
-			args:       []string{"bulb", "color", "bulb-1", "190", "60"},
+			args:       []string{testBulbCommand, "color", testBulbDevice, "190", "60"},
 			request:    bulbColorRequestBody,
 			response:   bulbMutationResponseBody,
 			wantOutput: "Bulb color request acknowledged",
 		},
 		{
 			name:       "device alias",
-			args:       []string{"device", "alias", "bulb-1", "Bedroom Light"},
+			args:       []string{"device", "alias", testBulbDevice, "Bedroom Light"},
 			request:    deviceAliasRequestBody,
 			response:   deviceAliasResponseBody,
 			wantOutput: "Device alias request acknowledged",

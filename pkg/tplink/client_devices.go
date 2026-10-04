@@ -3,15 +3,17 @@ package tplink
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
-	"github.com/portpowered/go-tplink/pkg/generatedwire"
+	"github.com/portpowered/go-tplink/pkg/dependencies/cloud"
+	"github.com/portpowered/go-tplink/pkg/dependencymodels"
 	"github.com/portpowered/go-tplink/pkg/tplinkmodels"
 )
 
 // GetDevices retrieves all devices registered to the authenticated account.
 func (client *Client) GetDevices(ctx context.Context, request GetDevicesRequest) (GetDevicesResult, error) {
-	cloudReq := generatedwire.GetDeviceListCloudRequest{
-		Method: generatedwire.GetDeviceList,
+	cloudReq := dependencymodels.GetDeviceListCloudRequest{
+		Method: dependencymodels.MethodGetDeviceList,
 	}
 
 	respBytes, err := client.doCloudRequest(ctx, "GetDevices", cloudReq, &request.Auth)
@@ -19,12 +21,12 @@ func (client *Client) GetDevices(ctx context.Context, request GetDevicesRequest)
 		return GetDevicesResult{}, err
 	}
 
-	err = checkCloudError(respBytes, "GetDevices")
+	err = cloud.CheckError(respBytes, "GetDevices")
 	if err != nil {
-		return GetDevicesResult{}, err
+		return GetDevicesResult{}, fmt.Errorf("%w", err)
 	}
 
-	var devResp generatedwire.DeviceListResponse
+	var devResp dependencymodels.DeviceListResponse
 
 	decodeErr := json.Unmarshal(respBytes, &devResp)
 	if decodeErr != nil {

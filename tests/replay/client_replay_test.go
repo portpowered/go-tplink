@@ -54,19 +54,19 @@ func newTestClientWithDoer(t *testing.T, doer tplink.HTTPDoer) *tplink.Client {
 func TestLoginAndDeviceListReplay(t *testing.T) {
 	t.Parallel()
 	client, transport := newTestClient(t)
-	transport.expectSequence("login", "getDeviceList", "getDeviceList")
+	transport.expectSequence(replayLoginOperation, replayDeviceListMethod, replayDeviceListMethod)
 	transport.expectToken(1, "account-one-token")
 	transport.expectToken(2, "account two+token&scope=devices")
 
 	ctx := context.Background()
 	login, err := client.Login(ctx, tplink.LoginRequest{
-		Email:    "user@example.com",
-		Password: "placeholder-password",
+		Email:    replayTestEmail,
+		Password: replayTestPassword,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "test-auth-token-abc123", login.Token)
 	assert.Equal(t, "acc-123456", login.AccountID)
-	assert.Equal(t, "user@example.com", login.Email)
+	assert.Equal(t, replayTestEmail, login.Email)
 	assert.Equal(t, "US", login.CountryCode)
 
 	loginRequest := onlyRecordedRequest(t, transport)
@@ -83,10 +83,10 @@ func TestLoginAndDeviceListReplay(t *testing.T) {
 	}
 
 	require.NoError(t, json.Unmarshal(loginRequest.Body, &loginEnvelope))
-	assert.Equal(t, "login", loginEnvelope.Method)
+	assert.Equal(t, replayLoginOperation, loginEnvelope.Method)
 	assert.Equal(t, "Tapo_Android", loginEnvelope.Params.AppType)
-	assert.Equal(t, "user@example.com", loginEnvelope.Params.CloudUserName)
-	assert.Equal(t, "placeholder-password", loginEnvelope.Params.CloudPassword)
+	assert.Equal(t, replayTestEmail, loginEnvelope.Params.CloudUserName)
+	assert.Equal(t, replayTestPassword, loginEnvelope.Params.CloudPassword)
 
 	assertRequestScopedDeviceTokens(ctx, t, client, transport)
 }
@@ -105,7 +105,7 @@ func assertRequestScopedDeviceTokens(
 	})
 	require.NoError(t, err)
 	require.Len(t, first.Devices, 1)
-	assert.Equal(t, "device-plug-001", first.Devices[0].DeviceID)
+	assert.Equal(t, replayPlugDeviceID, first.Devices[0].DeviceID)
 	assert.Equal(t, "Living Room Plug", first.Devices[0].Alias)
 	assert.Equal(t, "HS105(US)", first.Devices[0].DeviceModel)
 	assert.Equal(t, 1, first.Devices[0].Status)
@@ -131,7 +131,7 @@ func assertRequestScopedDeviceTokens(
 		}
 
 		require.NoError(t, json.Unmarshal(request.Body, &envelope))
-		assert.Equal(t, "getDeviceList", envelope.Method)
+		assert.Equal(t, replayDeviceListMethod, envelope.Method)
 	}
 }
 
@@ -140,10 +140,10 @@ func TestDeviceListReplayShapes(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		t.Parallel()
 		client, transport := newTestClient(t)
-		transport.useFixture("getDeviceList", "getDeviceList_empty")
+		transport.useFixture(replayDeviceListMethod, "getDeviceList_empty")
 
 		result, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
-			Auth: tplink.AuthContext{AccessToken: "test-token"},
+			Auth: tplink.AuthContext{AccessToken: replayTestToken},
 		})
 		require.NoError(t, err)
 		assert.Empty(t, result.Devices)
@@ -152,10 +152,10 @@ func TestDeviceListReplayShapes(t *testing.T) {
 	t.Run("mixed device types", func(t *testing.T) {
 		t.Parallel()
 		client, transport := newTestClient(t)
-		transport.useFixture("getDeviceList", "getDeviceList_mixed")
+		transport.useFixture(replayDeviceListMethod, "getDeviceList_mixed")
 
 		result, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
-			Auth: tplink.AuthContext{AccessToken: "test-token"},
+			Auth: tplink.AuthContext{AccessToken: replayTestToken},
 		})
 		require.NoError(t, err)
 		require.Len(t, result.Devices, 4)
@@ -196,10 +196,10 @@ func TestCloudErrorReplayMappings(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			client, transport := newTestClient(t)
-			transport.useFixture("getDeviceList", test.fixture)
+			transport.useFixture(replayDeviceListMethod, test.fixture)
 
 			_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
-				Auth: tplink.AuthContext{AccessToken: "test-token"},
+				Auth: tplink.AuthContext{AccessToken: replayTestToken},
 			})
 			require.Error(t, err)
 			assert.True(t, test.wantErr(err), "unexpected error type: %T (%v)", err, err)
@@ -209,10 +209,10 @@ func TestCloudErrorReplayMappings(t *testing.T) {
 	t.Run("unrecognized cloud error", func(t *testing.T) {
 		t.Parallel()
 		client, transport := newTestClient(t)
-		transport.useResponse("getDeviceList", http.StatusOK, []byte(`{"error_code":-99999,"msg":"Unknown error"}`))
+		transport.useResponse(replayDeviceListMethod, http.StatusOK, []byte(`{"error_code":-99999,"msg":"Unknown error"}`))
 
 		_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
-			Auth: tplink.AuthContext{AccessToken: "test-token"},
+			Auth: tplink.AuthContext{AccessToken: replayTestToken},
 		})
 		require.Error(t, err)
 		assert.True(t, tplinkmodels.IsCloudAPIError(err))
@@ -224,11 +224,11 @@ func TestLoginAndDeviceErrorReplayMappings(t *testing.T) {
 	t.Run("rejected login", func(t *testing.T) {
 		t.Parallel()
 		client, transport := newTestClient(t)
-		transport.useFixture("login", "login_failure")
+		transport.useFixture(replayLoginOperation, "login_failure")
 
 		_, err := client.Login(context.Background(), tplink.LoginRequest{
 			Email:    "bad@example.com",
-			Password: "placeholder-password",
+			Password: replayTestPassword,
 		})
 		require.Error(t, err)
 		assert.True(t, tplinkmodels.IsAuthenticationError(err))
@@ -237,10 +237,10 @@ func TestLoginAndDeviceErrorReplayMappings(t *testing.T) {
 	t.Run("unsupported plug operation", func(t *testing.T) {
 		t.Parallel()
 		client, transport := newTestClient(t)
-		transport.useFixture("passthrough_system_get_sysinfo", "error_unsupported")
+		transport.useFixture(replayOperationPower, "error_unsupported")
 
 		_, err := client.GetPowerState(context.Background(), tplink.GetPowerStateRequest{
-			Auth:     tplink.AuthContext{AccessToken: "test-token"},
+			Auth:     tplink.AuthContext{AccessToken: replayTestToken},
 			DeviceID: "device-unknown-001",
 		})
 		require.Error(t, err)
@@ -250,12 +250,12 @@ func TestLoginAndDeviceErrorReplayMappings(t *testing.T) {
 	t.Run("unsupported bulb operation", func(t *testing.T) {
 		t.Parallel()
 		client, transport := newTestClient(t)
-		transport.useFixture("passthrough_lightingservice_transition_light_state", "error_unsupported")
+		transport.useFixture(replayOperationLightSet, "error_unsupported")
 		transport.expectVariant(1)
 
 		err := client.SetBrightness(context.Background(), tplink.SetBrightnessRequest{
-			Auth:       tplink.AuthContext{AccessToken: "test-token"},
-			DeviceID:   "device-plug-001",
+			Auth:       tplink.AuthContext{AccessToken: replayTestToken},
+			DeviceID:   replayPlugDeviceID,
 			Brightness: 50,
 		})
 		require.Error(t, err)
@@ -283,7 +283,7 @@ func TestClosedClientRejectsRequests(t *testing.T) {
 	require.NoError(t, client.Close())
 
 	_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
-		Auth: tplink.AuthContext{AccessToken: "test-token"},
+		Auth: tplink.AuthContext{AccessToken: replayTestToken},
 	})
 	require.Error(t, err)
 	assert.True(t, tplinkmodels.IsClientClosedError(err))
@@ -314,6 +314,40 @@ func TestPassthroughRequestReplay(t *testing.T) {
 	})
 }
 
+func TestNilLightStateUsesGeneratedNullablePayload(t *testing.T) {
+	t.Parallel()
+	client, transport := newTestClient(t)
+	transport.expectSequence(replayOperationLightSet)
+	transport.expectVariant(5)
+
+	err := client.SetLightState(context.Background(), tplink.SetLightStateRequest{
+		Auth:     tplink.AuthContext{AccessToken: replayTestToken},
+		DeviceID: replayBulbDeviceID,
+		State:    nil,
+	})
+	require.NoError(t, err)
+
+	request := onlyRecordedRequest(t, transport)
+
+	var outer struct {
+		Params struct {
+			RequestData string `json:"requestData"`
+		} `json:"params"`
+	}
+
+	decodeErr := json.Unmarshal(request.Body, &outer)
+	require.NoError(t, decodeErr)
+
+	var command map[string]map[string]json.RawMessage
+
+	decodeErr = json.Unmarshal([]byte(outer.Params.RequestData), &command)
+	require.NoError(t, decodeErr)
+	require.Contains(t, command, "smartlife.iot.smartbulb.lightingservice")
+	nested := command["smartlife.iot.smartbulb.lightingservice"]
+	require.Contains(t, nested, "transition_light_state")
+	assert.Equal(t, "null", strings.TrimSpace(string(nested["transition_light_state"])))
+}
+
 func runPassthroughRequestCases(t *testing.T, tests []passthroughReplayCase) {
 	t.Helper()
 
@@ -334,7 +368,7 @@ func runPassthroughRequestCases(t *testing.T, tests []passthroughReplayCase) {
 func assertPassthroughReplayRequest(t *testing.T, transport *replayTransport, test passthroughReplayCase) {
 	t.Helper()
 	request := onlyRecordedRequest(t, transport)
-	assert.Equal(t, "test-token", request.URL.Query().Get("token"))
+	assert.Equal(t, replayTestToken, request.URL.Query().Get("token"))
 	command, fields := decodePassthroughCommand(t, request.Body)
 	assert.Equal(t, test.deviceID, command.deviceID)
 	assert.Equal(t, test.command, command.name)
@@ -345,36 +379,36 @@ func assertPassthroughReplayRequest(t *testing.T, transport *replayTransport, te
 }
 
 func plugCommandReplayCases() []passthroughReplayCase {
-	auth := tplink.AuthContext{AccessToken: "test-token"}
+	auth := tplink.AuthContext{AccessToken: replayTestToken}
 
 	return []passthroughReplayCase{
 		{
-			name: "turn on plug", deviceID: "device-plug-001", command: "system.set_relay_state",
+			name: "turn on plug", deviceID: replayPlugDeviceID, command: "system.set_relay_state",
 			variant: 0, wantFields: map[string]any{"state": float64(1)},
 			call: func(client *tplink.Client) error {
-				return client.TurnOn(context.Background(), tplink.TurnOnRequest{Auth: auth, DeviceID: "device-plug-001"})
+				return client.TurnOn(context.Background(), tplink.TurnOnRequest{Auth: auth, DeviceID: replayPlugDeviceID})
 			},
 		},
 		{
-			name: "turn off plug", deviceID: "device-plug-001", command: "system.set_relay_state",
+			name: "turn off plug", deviceID: replayPlugDeviceID, command: "system.set_relay_state",
 			variant: 1, wantFields: map[string]any{"state": float64(0)},
 			call: func(client *tplink.Client) error {
-				return client.TurnOff(context.Background(), tplink.TurnOffRequest{Auth: auth, DeviceID: "device-plug-001"})
+				return client.TurnOff(context.Background(), tplink.TurnOffRequest{Auth: auth, DeviceID: replayPlugDeviceID})
 			},
 		},
 		{
-			name: "reboot plug", deviceID: "device-plug-001", command: "system.reboot",
+			name: "reboot plug", deviceID: replayPlugDeviceID, command: "system.reboot",
 			variant: 0, wantFields: map[string]any{"delay": float64(1)},
 			call: func(client *tplink.Client) error {
-				return client.Reboot(context.Background(), tplink.RebootRequest{Auth: auth, DeviceID: "device-plug-001"})
+				return client.Reboot(context.Background(), tplink.RebootRequest{Auth: auth, DeviceID: replayPlugDeviceID})
 			},
 		},
 		{
-			name: "rename device", deviceID: "device-plug-001", command: "system.set_dev_alias",
+			name: "rename device", deviceID: replayPlugDeviceID, command: "system.set_dev_alias",
 			variant: 0, wantFields: map[string]any{"alias": "New Name"},
 			call: func(client *tplink.Client) error {
 				return client.SetAlias(context.Background(), tplink.SetAliasRequest{
-					Auth: auth, DeviceID: "device-plug-001", Alias: "New Name",
+					Auth: auth, DeviceID: replayPlugDeviceID, Alias: "New Name",
 				})
 			},
 		},
@@ -382,47 +416,51 @@ func plugCommandReplayCases() []passthroughReplayCase {
 }
 
 func lightMutationReplayCases() []passthroughReplayCase {
-	auth := tplink.AuthContext{AccessToken: "test-token"}
+	auth := tplink.AuthContext{AccessToken: replayTestToken}
 	command := "smartlife.iot.smartbulb.lightingservice.transition_light_state"
 
 	return []passthroughReplayCase{
 		{
-			name: "set brightness", deviceID: "device-bulb-001", command: command,
-			variant: 0, wantFields: map[string]any{"brightness": float64(50)},
+			name: "set brightness", deviceID: replayBulbDeviceID, command: command,
+			variant: 0, wantFields: map[string]any{replayBrightnessField: float64(50)},
 			call: func(client *tplink.Client) error {
 				return client.SetBrightness(context.Background(), tplink.SetBrightnessRequest{
-					Auth: auth, DeviceID: "device-bulb-001", Brightness: 50,
+					Auth: auth, DeviceID: replayBulbDeviceID, Brightness: 50,
 				})
 			},
 		},
 		{
-			name: "set color temperature", deviceID: "device-bulb-001", command: command,
+			name: "set color temperature", deviceID: replayBulbDeviceID, command: command,
 			variant: 1, wantFields: map[string]any{"color_temp": float64(4000)},
 			call: func(client *tplink.Client) error {
 				return client.SetColorTemp(context.Background(), tplink.SetColorTempRequest{
-					Auth: auth, DeviceID: "device-bulb-001", ColorTemp: 4000,
+					Auth: auth, DeviceID: replayBulbDeviceID, ColorTemp: 4000,
 				})
 			},
 		},
 		{
-			name: "set color", deviceID: "device-bulb-001", command: command,
-			variant: 2, wantFields: map[string]any{"hue": float64(240), "saturation": float64(80)},
+			name: "set color", deviceID: replayBulbDeviceID, command: command,
+			variant: 2, wantFields: map[string]any{replayHueField: float64(240), replaySaturationField: float64(80)},
 			call: func(client *tplink.Client) error {
 				return client.SetColor(context.Background(), tplink.SetColorRequest{
-					Auth: auth, DeviceID: "device-bulb-001", Hue: 240, Saturation: 80,
+					Auth: auth, DeviceID: replayBulbDeviceID, Hue: 240, Saturation: 80,
 				})
 			},
 		},
 		{
-			name: "set light state", deviceID: "device-bulb-001", command: command,
+			name: "set light state", deviceID: replayBulbDeviceID, command: command,
 			variant: 3,
 			wantFields: map[string]any{
-				"on_off": float64(1), "brightness": float64(75), "hue": float64(120), "saturation": float64(50),
+				"on_off": float64(1), replayBrightnessField: float64(75),
+				replayHueField: float64(120), replaySaturationField: float64(50),
 			},
 			call: func(client *tplink.Client) error {
 				return client.SetLightState(context.Background(), tplink.SetLightStateRequest{
-					Auth: auth, DeviceID: "device-bulb-001",
-					State: map[string]any{"on_off": 1, "brightness": 75, "hue": 120, "saturation": 50},
+					Auth: auth, DeviceID: replayBulbDeviceID,
+					State: map[string]any{
+						"on_off": 1, replayBrightnessField: 75,
+						replayHueField: 120, replaySaturationField: 50,
+					},
 				})
 			},
 		},
@@ -430,15 +468,15 @@ func lightMutationReplayCases() []passthroughReplayCase {
 }
 
 func stateReadReplayCases() []passthroughReplayCase {
-	auth := tplink.AuthContext{AccessToken: "test-token"}
+	auth := tplink.AuthContext{AccessToken: replayTestToken}
 
 	return []passthroughReplayCase{
 		{
-			name: "read plug state", deviceID: "device-plug-001", command: "system.get_sysinfo",
+			name: "read plug state", deviceID: replayPlugDeviceID, command: "system.get_sysinfo",
 			variant: 0, wantFields: nil,
 			call: func(client *tplink.Client) error {
 				_, err := client.GetPowerState(context.Background(), tplink.GetPowerStateRequest{
-					Auth: auth, DeviceID: "device-plug-001",
+					Auth: auth, DeviceID: replayPlugDeviceID,
 				})
 
 				//nolint:wrapcheck // The replay callback must pass client errors through unchanged.
@@ -446,11 +484,11 @@ func stateReadReplayCases() []passthroughReplayCase {
 			},
 		},
 		{
-			name: "read bulb state", deviceID: "device-bulb-001",
-			command: "smartlife.iot.smartbulb.lightingservice.get_light_state", variant: 0, wantFields: nil,
+			name: "read bulb state", deviceID: replayBulbDeviceID,
+			command: replayLightStateCommand, variant: 0, wantFields: nil,
 			call: func(client *tplink.Client) error {
 				_, err := client.GetLightState(context.Background(), tplink.GetLightStateRequest{
-					Auth: auth, DeviceID: "device-bulb-001",
+					Auth: auth, DeviceID: replayBulbDeviceID,
 				})
 
 				//nolint:wrapcheck // The replay callback must pass client errors through unchanged.
@@ -458,11 +496,11 @@ func stateReadReplayCases() []passthroughReplayCase {
 			},
 		},
 		{
-			name: "read brightness", deviceID: "device-bulb-001",
-			command: "smartlife.iot.smartbulb.lightingservice.get_light_state", variant: 0, wantFields: nil,
+			name: "read brightness", deviceID: replayBulbDeviceID,
+			command: replayLightStateCommand, variant: 0, wantFields: nil,
 			call: func(client *tplink.Client) error {
 				_, err := client.GetBrightness(context.Background(), tplink.GetBrightnessRequest{
-					Auth: auth, DeviceID: "device-bulb-001",
+					Auth: auth, DeviceID: replayBulbDeviceID,
 				})
 
 				//nolint:wrapcheck // The replay callback must pass client errors through unchanged.
@@ -470,11 +508,11 @@ func stateReadReplayCases() []passthroughReplayCase {
 			},
 		},
 		{
-			name: "read color temperature", deviceID: "device-bulb-001",
-			command: "smartlife.iot.smartbulb.lightingservice.get_light_state", variant: 0, wantFields: nil,
+			name: "read color temperature", deviceID: replayBulbDeviceID,
+			command: replayLightStateCommand, variant: 0, wantFields: nil,
 			call: func(client *tplink.Client) error {
 				_, err := client.GetColorTemp(context.Background(), tplink.GetColorTempRequest{
-					Auth: auth, DeviceID: "device-bulb-001",
+					Auth: auth, DeviceID: replayBulbDeviceID,
 				})
 
 				//nolint:wrapcheck // The replay callback must pass client errors through unchanged.
@@ -482,11 +520,11 @@ func stateReadReplayCases() []passthroughReplayCase {
 			},
 		},
 		{
-			name: "read color", deviceID: "device-bulb-001",
-			command: "smartlife.iot.smartbulb.lightingservice.get_light_state", variant: 0, wantFields: nil,
+			name: "read color", deviceID: replayBulbDeviceID,
+			command: replayLightStateCommand, variant: 0, wantFields: nil,
 			call: func(client *tplink.Client) error {
 				_, err := client.GetColor(context.Background(), tplink.GetColorRequest{
-					Auth: auth, DeviceID: "device-bulb-001",
+					Auth: auth, DeviceID: replayBulbDeviceID,
 				})
 
 				//nolint:wrapcheck // The replay callback must pass client errors through unchanged.
@@ -499,22 +537,22 @@ func TestPowerAndLightStateReplayResults(t *testing.T) {
 	t.Parallel()
 	client, transport := newTestClient(t)
 	transport.expectSequence(
-		"passthrough_system_get_sysinfo",
-		"passthrough_lightingservice_get_light_state",
-		"passthrough_lightingservice_get_light_state",
-		"passthrough_lightingservice_get_light_state",
-		"passthrough_lightingservice_get_light_state",
+		replayOperationPower,
+		replayOperationLightGet,
+		replayOperationLightGet,
+		replayOperationLightGet,
+		replayOperationLightGet,
 	)
 
 	ctx := context.Background()
-	auth := tplink.AuthContext{AccessToken: "test-token"}
+	auth := tplink.AuthContext{AccessToken: replayTestToken}
 
-	power, err := client.GetPowerState(ctx, tplink.GetPowerStateRequest{Auth: auth, DeviceID: "device-plug-001"})
+	power, err := client.GetPowerState(ctx, tplink.GetPowerStateRequest{Auth: auth, DeviceID: replayPlugDeviceID})
 	require.NoError(t, err)
 	assert.True(t, power.IsOn)
 	assert.Equal(t, 3600, power.OnTime)
 
-	light, err := client.GetLightState(ctx, tplink.GetLightStateRequest{Auth: auth, DeviceID: "device-bulb-001"})
+	light, err := client.GetLightState(ctx, tplink.GetLightStateRequest{Auth: auth, DeviceID: replayBulbDeviceID})
 	require.NoError(t, err)
 	assert.Equal(t, 1, light.OnOff)
 	assert.Equal(t, 75, light.Brightness)
@@ -523,15 +561,15 @@ func TestPowerAndLightStateReplayResults(t *testing.T) {
 	assert.Equal(t, 0, light.ColorTemp)
 	assert.Equal(t, "normal", light.Mode)
 
-	brightness, err := client.GetBrightness(ctx, tplink.GetBrightnessRequest{Auth: auth, DeviceID: "device-bulb-001"})
+	brightness, err := client.GetBrightness(ctx, tplink.GetBrightnessRequest{Auth: auth, DeviceID: replayBulbDeviceID})
 	require.NoError(t, err)
 	assert.Equal(t, 75, brightness.Brightness)
 
-	colorTemp, err := client.GetColorTemp(ctx, tplink.GetColorTempRequest{Auth: auth, DeviceID: "device-bulb-001"})
+	colorTemp, err := client.GetColorTemp(ctx, tplink.GetColorTempRequest{Auth: auth, DeviceID: replayBulbDeviceID})
 	require.NoError(t, err)
 	assert.Equal(t, 0, colorTemp.ColorTemp)
 
-	color, err := client.GetColor(ctx, tplink.GetColorRequest{Auth: auth, DeviceID: "device-bulb-001"})
+	color, err := client.GetColor(ctx, tplink.GetColorRequest{Auth: auth, DeviceID: replayBulbDeviceID})
 	require.NoError(t, err)
 	assert.Equal(t, 240, color.Hue)
 	assert.Equal(t, 80, color.Saturation)
@@ -560,10 +598,10 @@ func TestMalformedAndHTTPFailureResponses(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			client, transport := newTestClient(t)
-			transport.useResponse("getDeviceList", test.status, test.body)
+			transport.useResponse(replayDeviceListMethod, test.status, test.body)
 
 			_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
-				Auth: tplink.AuthContext{AccessToken: "test-token"},
+				Auth: tplink.AuthContext{AccessToken: replayTestToken},
 			})
 			require.Error(t, err)
 			assert.True(t, test.want(err), "unexpected error type: %T (%v)", err, err)
@@ -574,19 +612,19 @@ func TestMalformedAndHTTPFailureResponses(t *testing.T) {
 func TestPassthroughMissingCommandIsInvalidResponse(t *testing.T) {
 	t.Parallel()
 	client, transport := newTestClient(t)
-	transport.expectSequence("passthrough_system_set_relay_state", "passthrough_system_get_sysinfo")
-	transport.useResponse("passthrough_system_set_relay_state", http.StatusOK,
+	transport.expectSequence(replayOperationRelay, replayOperationPower)
+	transport.useResponse(replayOperationRelay, http.StatusOK,
 		[]byte(`{"error_code":0,"result":{"responseData":"{\"system\":{}}"}}`))
-	transport.useResponse("passthrough_system_get_sysinfo", http.StatusOK,
+	transport.useResponse(replayOperationPower, http.StatusOK,
 		[]byte(`{"error_code":0,"result":{"responseData":"{\"system\":{}}"}}`))
 
-	auth := tplink.AuthContext{AccessToken: "test-token"}
-	err := client.TurnOn(context.Background(), tplink.TurnOnRequest{Auth: auth, DeviceID: "device-plug-001"})
+	auth := tplink.AuthContext{AccessToken: replayTestToken}
+	err := client.TurnOn(context.Background(), tplink.TurnOnRequest{Auth: auth, DeviceID: replayPlugDeviceID})
 	require.Error(t, err)
 	assert.True(t, tplinkmodels.IsInvalidResponseError(err))
 
 	_, err = client.GetPowerState(context.Background(), tplink.GetPowerStateRequest{
-		Auth: auth, DeviceID: "device-plug-001",
+		Auth: auth, DeviceID: replayPlugDeviceID,
 	})
 	require.Error(t, err)
 	assert.True(t, tplinkmodels.IsInvalidResponseError(err))
@@ -597,10 +635,10 @@ func TestOversizedAndNilHTTPResponses(t *testing.T) {
 	t.Run("oversized body", func(t *testing.T) {
 		t.Parallel()
 		client, transport := newTestClient(t)
-		transport.useResponse("getDeviceList", http.StatusOK, []byte(strings.Repeat(" ", (1<<20)+1)))
+		transport.useResponse(replayDeviceListMethod, http.StatusOK, []byte(strings.Repeat(" ", (1<<20)+1)))
 
 		_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
-			Auth: tplink.AuthContext{AccessToken: "test-token"},
+			Auth: tplink.AuthContext{AccessToken: replayTestToken},
 		})
 		require.Error(t, err)
 		assert.True(t, tplinkmodels.IsResponseTooLargeError(err))
@@ -615,7 +653,7 @@ func TestOversizedAndNilHTTPResponses(t *testing.T) {
 		t.Cleanup(func() { require.NoError(t, transport.assertConsumed()) })
 
 		_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
-			Auth: tplink.AuthContext{AccessToken: "test-token"},
+			Auth: tplink.AuthContext{AccessToken: replayTestToken},
 		})
 		require.Error(t, err)
 		assert.True(t, tplinkmodels.IsInvalidResponseError(err))
@@ -627,7 +665,7 @@ func TestOversizedAndNilHTTPResponses(t *testing.T) {
 		transport.useFault("fault-device-nil-body", nil, nil)
 
 		_, err := client.GetDevices(context.Background(), tplink.GetDevicesRequest{
-			Auth: tplink.AuthContext{AccessToken: "test-token"},
+			Auth: tplink.AuthContext{AccessToken: replayTestToken},
 		})
 		require.Error(t, err)
 		assert.True(t, tplinkmodels.IsInvalidResponseError(err))
@@ -638,7 +676,7 @@ func TestTransportErrorsDoNotLeakRequestTokens(t *testing.T) {
 	t.Parallel()
 	client, transport := newTestClient(t)
 	transportFailure := errConnectionRefused
-	transport.useError("getDeviceList", transportFailure)
+	transport.useError(replayDeviceListMethod, transportFailure)
 
 	token := "private token+&scope=devices"
 	transport.expectToken(0, token)

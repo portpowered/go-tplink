@@ -1,11 +1,16 @@
+// Package tplinkmodels contains generated provider models and handwritten device helpers.
+//
+//nolint:godoclint // The generated model file also includes its package comment.
 package tplinkmodels
+
+import "github.com/portpowered/go-tplink/pkg/dependencymodels"
 
 // ClassifyDevice returns the endpoint type for a device based on its deviceType field.
 func ClassifyDevice(deviceType string) EndpointType {
 	switch deviceType {
-	case "IOT.SMARTPLUGSWITCH", "IOT.RANGEEXTENDER.SMARTPLUG":
+	case dependencymodels.DeviceTypeSmartPlug, dependencymodels.DeviceTypeRangeExtenderPlug:
 		return EndpointTypePlug
-	case "IOT.SMARTBULB":
+	case dependencymodels.DeviceTypeSmartBulb:
 		return EndpointTypeBulb
 	default:
 		return EndpointTypeOther
@@ -28,9 +33,9 @@ func DetectCapabilities(device Device) Capabilities {
 			caps.Brightness = true
 		}
 	case EndpointTypeBulb:
-		caps.Brightness = device.IsDimmable == 1
-		caps.Color = device.IsColor == 1
-		caps.ColorTemp = device.IsVariableColor == 1
+		caps.Brightness = device.IsDimmable == dependencymodels.DeviceCapabilityEnabled
+		caps.Color = device.IsColor == dependencymodels.DeviceCapabilityEnabled
+		caps.ColorTemp = device.IsVariableColor == dependencymodels.DeviceCapabilityEnabled
 	case EndpointTypeOther:
 		return caps
 	}

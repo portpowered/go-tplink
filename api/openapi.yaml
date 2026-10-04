@@ -12,12 +12,17 @@ info:
 servers:
   - url: https://use1-wap.tplinkcloud.com
     description: Default base URL embedded in go-tplink.
+    x-go-compat-constant-name: BaseURLUS
+    x-go-default-base-url-constant-name: DefaultBaseURL
   - url: https://eu-wap.tplinkcloud.com
     description: Regional base URL constant embedded in go-tplink.
+    x-go-compat-constant-name: BaseURLEU
   - url: https://aps1-wap.tplinkcloud.com
     description: Regional base URL constant embedded in go-tplink.
+    x-go-compat-constant-name: BaseURLAsiaPacific
   - url: https://wap.tplinkcloud.com
     description: Global base URL constant embedded in go-tplink.
+    x-go-compat-constant-name: BaseURLGlobal
 tags:
   - name: Cloud request
     description: All implemented operations use this single cloud request endpoint.
@@ -28,6 +33,8 @@ paths:
         - Cloud request
       security: []
       operationId: sendCloudRequest
+      x-go-wire-method-constant-name: CloudRequestHTTPMethod
+      x-go-wire-path-constant-name: CloudRequestPath
       summary: Dispatch a cloud method
       description: >-
         All implemented cloud methods use this POST route. The method field
@@ -37,6 +44,7 @@ paths:
         - name: token
           in: query
           required: false
+          x-go-wire-constant-name: TokenQueryKey
           description: |
             Session token. Omit for login. Required by the implemented client for getDeviceList and passthrough requests.
           schema:
@@ -44,8 +52,11 @@ paths:
       requestBody:
         required: true
         description: One method-specific JSON envelope per request.
+        x-go-wire-content-type-header-constant-name: CloudRequestContentTypeHeader
+        x-go-wire-content-type-header: Content-Type
         content:
           application/json:
+            x-go-wire-constant-name: CloudRequestContentType
             schema:
               $ref: '#/components/schemas/CloudRequest'
             examples:
@@ -229,6 +240,9 @@ components:
           type: string
           enum:
             - login
+          x-go-compat-constant-names:
+            - value: login
+              name: MethodLogin
         params:
           $ref: '#/components/schemas/LoginParams'
     GetDeviceListCloudRequest:
@@ -241,6 +255,9 @@ components:
           type: string
           enum:
             - getDeviceList
+          x-go-compat-constant-names:
+            - value: getDeviceList
+              name: MethodGetDeviceList
       description: The implemented client sends no params for this method.
     PassthroughCloudRequest:
       type: object
@@ -253,6 +270,9 @@ components:
           type: string
           enum:
             - passthrough
+          x-go-compat-constant-names:
+            - value: passthrough
+              name: MethodPassthrough
         params:
           $ref: '#/components/schemas/PassthroughParams'
     LoginParams:
@@ -268,6 +288,8 @@ components:
           type: string
           enum:
             - Tapo_Android
+          x-go-compat-constant-name: AppType
+          x-go-wire-constant-value: true
           description: Fixed appType value sent by this client.
         cloudUserName:
           type: string
@@ -280,6 +302,8 @@ components:
           type: string
           enum:
             - go-tplink-client
+          x-go-wire-constant-name: TerminalUUID
+          x-go-wire-constant-value: true
           description: Fixed terminalUUID value sent by this client.
     PassthroughParams:
       type: object
@@ -319,12 +343,14 @@ components:
         - system
       properties:
         system:
+          x-go-compat-constant-name: NamespaceSystem
           type: object
           additionalProperties: false
           required:
             - get_sysinfo
           properties:
             get_sysinfo:
+              x-go-compat-constant-name: CmdGetSysInfo
               type: string
               enum:
                 - ''
@@ -336,12 +362,14 @@ components:
         - system
       properties:
         system:
+          x-go-compat-constant-name: NamespaceSystem
           type: object
           additionalProperties: false
           required:
             - set_relay_state
           properties:
             set_relay_state:
+              x-go-compat-constant-name: CmdSetRelayState
               type: object
               additionalProperties: false
               required:
@@ -360,12 +388,14 @@ components:
         - system
       properties:
         system:
+          x-go-compat-constant-name: NamespaceSystem
           type: object
           additionalProperties: false
           required:
             - reboot
           properties:
             reboot:
+              x-go-compat-constant-name: CmdReboot
               type: object
               additionalProperties: false
               required:
@@ -383,12 +413,14 @@ components:
         - system
       properties:
         system:
+          x-go-compat-constant-name: NamespaceSystem
           type: object
           additionalProperties: false
           required:
             - set_dev_alias
           properties:
             set_dev_alias:
+              x-go-compat-constant-name: CmdSetDevAlias
               type: object
               additionalProperties: false
               required:
@@ -403,12 +435,14 @@ components:
         - smartlife.iot.smartbulb.lightingservice
       properties:
         smartlife.iot.smartbulb.lightingservice:
+          x-go-compat-constant-name: NamespaceLightingService
           type: object
           additionalProperties: false
           required:
             - get_light_state
           properties:
             get_light_state:
+              x-go-compat-constant-name: CmdGetLightState
               type: string
               enum:
                 - ''
@@ -420,13 +454,17 @@ components:
         - smartlife.iot.smartbulb.lightingservice
       properties:
         smartlife.iot.smartbulb.lightingservice:
+          x-go-compat-constant-name: NamespaceLightingService
           type: object
           additionalProperties: false
           required:
             - transition_light_state
           properties:
             transition_light_state:
+              x-go-compat-constant-name: CmdTransitionLightState
               $ref: '#/components/schemas/LightTransitionState'
+              x-go-type: '*LightTransitionState'
+              nullable: true
     LightTransitionState:
       type: object
       description: >-
@@ -481,6 +519,17 @@ components:
             - -20651
             - -20104
             - -20601
+          x-go-wire-constant-names:
+            - value: 0
+              name: CloudErrorCodeOK
+            - value: -20004
+              name: CloudErrorCodeRateLimited
+            - value: -20651
+              name: CloudErrorCodeTokenExpired
+            - value: -20104
+              name: CloudErrorCodeParameter
+            - value: -20601
+              name: CloudErrorCodeAuthentication
         msg:
           type: string
           description: Optional cloud error message.
@@ -549,6 +598,13 @@ components:
             - IOT.SMARTPLUGSWITCH
             - IOT.RANGEEXTENDER.SMARTPLUG
             - IOT.SMARTBULB
+          x-go-wire-constant-names:
+            - value: IOT.SMARTPLUGSWITCH
+              name: DeviceTypeSmartPlug
+            - value: IOT.RANGEEXTENDER.SMARTPLUG
+              name: DeviceTypeRangeExtenderPlug
+            - value: IOT.SMARTBULB
+              name: DeviceTypeSmartBulb
         deviceId:
           type: string
           description: Pass this value as params.deviceId for passthrough commands.
@@ -582,12 +638,36 @@ components:
         is_dimmable:
           type: integer
           description: Cloud-reported capability flag; 1 indicates dimming support.
+          x-extensible-enum:
+            - 0
+            - 1
+          x-go-wire-constant-names:
+            - value: 0
+              name: DeviceCapabilityDisabled
+            - value: 1
+              name: DeviceCapabilityEnabled
         is_color:
           type: integer
           description: Cloud-reported capability flag; 1 indicates color support.
+          x-extensible-enum:
+            - 0
+            - 1
+          x-go-wire-constant-names:
+            - value: 0
+              name: DeviceCapabilityDisabled
+            - value: 1
+              name: DeviceCapabilityEnabled
         is_variable_color_temp:
           type: integer
           description: Cloud-reported capability flag; 1 indicates color temperature support.
+          x-extensible-enum:
+            - 0
+            - 1
+          x-go-wire-constant-names:
+            - value: 0
+              name: DeviceCapabilityDisabled
+            - value: 1
+              name: DeviceCapabilityEnabled
         brightness:
           type: integer
       additionalProperties: true
@@ -621,15 +701,20 @@ components:
       type: object
       properties:
         system:
+          x-go-compat-constant-name: NamespaceSystem
           type: object
           properties:
             get_sysinfo:
+              x-go-compat-constant-name: CmdGetSysInfo
               $ref: '#/components/schemas/SysInfo'
             set_relay_state:
+              x-go-compat-constant-name: CmdSetRelayState
               $ref: '#/components/schemas/CommandAcknowledgement'
             reboot:
+              x-go-compat-constant-name: CmdReboot
               $ref: '#/components/schemas/CommandAcknowledgement'
             set_dev_alias:
+              x-go-compat-constant-name: CmdSetDevAlias
               $ref: '#/components/schemas/CommandAcknowledgement'
           additionalProperties: true
       additionalProperties: true
@@ -637,11 +722,14 @@ components:
       type: object
       properties:
         smartlife.iot.smartbulb.lightingservice:
+          x-go-compat-constant-name: NamespaceLightingService
           type: object
           properties:
             get_light_state:
+              x-go-compat-constant-name: CmdGetLightState
               $ref: '#/components/schemas/LightState'
             transition_light_state:
+              x-go-compat-constant-name: CmdTransitionLightState
               $ref: '#/components/schemas/CommandAcknowledgement'
           additionalProperties: true
       additionalProperties: true
@@ -651,6 +739,14 @@ components:
         err_code:
           type: integer
           description: Zero indicates success; -1 indicates an unsupported command in the implemented client.
+          x-extensible-enum:
+            - 0
+            - -1
+          x-go-wire-constant-names:
+            - value: 0
+              name: DeviceErrorOK
+            - value: -1
+              name: DeviceErrorUnsupported
         err_msg:
           type: string
       additionalProperties: true
@@ -662,6 +758,11 @@ components:
         err_code:
           type: integer
           description: Non-zero device-level error code; -1 indicates an unsupported command.
+          x-extensible-enum:
+            - -1
+          x-go-wire-constant-names:
+            - value: -1
+              name: DeviceErrorUnsupported
         err_msg:
           type: string
       additionalProperties: true
@@ -680,10 +781,23 @@ components:
           type: string
         relay_state:
           type: integer
+          x-extensible-enum:
+            - 0
+            - 1
+          x-go-wire-constant-names:
+            - value: 0
+              name: DeviceStateOff
+            - value: 1
+              name: DeviceStateOn
         on_time:
           type: integer
         err_code:
           type: integer
+          x-extensible-enum:
+            - 0
+          x-go-wire-constant-names:
+            - value: 0
+              name: DeviceErrorOK
       additionalProperties: true
     LightState:
       type: object

@@ -21,10 +21,10 @@ jobs:
         with:
           go-version: '1.24.x'
           cache: true
-      - name: Lint with all linters (golangci-lint v2.3.0)
+      - name: Lint with all linters (golangci-lint v2.14.0)
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.3.0
+          version: v2.14.0
           args: ./...
   cli-lint:
     runs-on: ubuntu-latest
@@ -37,10 +37,10 @@ jobs:
         with:
           go-version-file: cmd/go-tplink/go.mod
           cache: true
-      - name: Lint standalone CLI with all linters (golangci-lint v2.3.0)
+      - name: Lint standalone CLI with all linters (golangci-lint v2.14.0)
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.3.0
+          version: v2.14.0
           working-directory: cmd/go-tplink
           args: --config .golangci.yml --allow-parallel-runners ./...
   cli-verify:
@@ -105,6 +105,8 @@ jobs:
         run: go test -race ./...
       - name: Enforce replay coverage floor
         run: go run ./tools/replaycoverage
+      - name: Enforce schema-backed wire payload inventory
+        run: go run ./tools/wireinventory
       - name: Vet
         run: go vet ./...
       - name: Check formatting
@@ -154,4 +156,4 @@ jobs:
       - name: Regenerate API models
         run: make generate-api
       - name: Check generated models
-        run: git diff --exit-code -- pkg/generatedwire/models.gen.go pkg/tplinkmodels/models.gen.go
+        run: git diff --exit-code -- pkg/dependencymodels pkg/generatedwire pkg/tplink/constants.gen.go pkg/tplinkmodels

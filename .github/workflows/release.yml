@@ -95,10 +95,10 @@ jobs:
         with:
           go-version-file: cmd/go-tplink/go.mod
           cache: true
-      - name: Lint CLI module with all linters (golangci-lint v2.3.0)
+      - name: Lint CLI module with all linters (golangci-lint v2.14.0)
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.3.0
+          version: v2.14.0
           working-directory: cmd/go-tplink
           args: --config .golangci.yml --allow-parallel-runners ./...
       - name: Build CLI module
