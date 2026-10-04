@@ -33,7 +33,7 @@ jobs:
       - name: Generate Fumadocs API reference
         uses: portpowered/api-docs-website-github-action@v0.3.0
         with:
-          title: go-tplink API Reference
+          title: TP-Link - implementation-derived
           openapi: api/openapi.yaml
           discover: false
           guides-directory: docs/guides

@@ -1,6 +1,6 @@
 # go-tplink checklist
 
-Requirements copied from the shared template at `25aeb783126c4049b3bc49286ee7808069db28e9`.
+Requirements copied from the shared template at `2f21da33e8acc0f9f94e5b53e9c812140c9cee1c`.
 
 Earlier scoped lint and replay reviews do not certify these expanded requirements.
 Keep every item open until two independent reviewers verify all items at the final
@@ -37,6 +37,11 @@ implementation commit.
    a generated map escaping through a named result to an unverified helper. Retain
    positive controls for caller-defined values; do not treat diagnostic or error
    return values as wire payloads merely because they share a helper.
+   Resolve helpers across every production file in their Go package, retaining each
+   file's import bindings. Add a compile-valid two-file negative where a sibling
+   helper returns an unregistered fixed value or mutates a generated map, plus
+   a caller-defined positive control. A per-file scan does not prove package-wide
+   provenance.
    Check all intermediate keys in indexed receiver paths and aliases, including slices,
    pointer dereferences, and type assertions. Test inferred nested composites and retain
    positive cases for explicitly caller-defined open keys.
@@ -69,7 +74,12 @@ implementation commit.
    generated path does not approve an arbitrary authority in a formatted full URL; accept only an
    explicitly configured or inventoried authority, and require REST base prefixes to come from
    configured or inventoried origins. Exercise lexical shadowing so a same-named local variable
-   cannot inherit another scope's generated route. Require generated `QueryParam` and `Header` keys
+   cannot inherit another scope's generated route.
+   Check the actual request object through the send: reject unregistered method,
+   URL origin/path/query, header, or body mutations after construction, including
+   aliases, cloned requests, and helper escapes. Add a negative control that changes
+   `request.URL.Path` between a generated constructor and `Do` or its equivalent.
+   Require generated `QueryParam` and `Header` keys
    for query setters and direct or aliased map writes, map literals, request headers, and
    custom-header maps. Normalize parenthesized map receivers and indexed expressions before checking
    query/header keys, and reject aliases to query or header `Set`/`Add` method values that could
@@ -129,4 +139,4 @@ implementation commit.
 
 - [ ] **16.** Provide an installable standalone CLI that consumes the public SDK so customers can test the library without a consuming application. Use a separate module under `cmd/go-<provider>`; keep CLI concerns out of the SDK. Cover authentication and explicit token exchange, device or endpoint discovery, important read/control workflows, and event/session lifecycles where supported. Include useful help, machine-readable output, nonzero failures, cancellation, and session cleanup. Accept credentials through documented environment, stdin, or explicit file inputs; keep secrets out of arguments and ordinary output, and make credential export an explicit action. Require explicit commands for device changes. Document installation and customer examples in an MDX guide. Test CLI commands offline through injected paired request/response transports, including authentication errors and lifecycle cleanup, and run blocking pinned all-linter, build, test, and module checks for the CLI in CI. Verify a separate consumer installation from the published CLI module and release its module tags with the SDK.
 
-See [verification](https://github.com/portpowered/go-third-party-template/blob/25aeb783126c4049b3bc49286ee7808069db28e9/docs/verification.md), [client design](https://github.com/portpowered/go-third-party-template/blob/25aeb783126c4049b3bc49286ee7808069db28e9/docs/client-design.md), and [website publishing](https://github.com/portpowered/go-third-party-template/blob/25aeb783126c4049b3bc49286ee7808069db28e9/docs/website.md).
+See [verification](https://github.com/portpowered/go-third-party-template/blob/2f21da33e8acc0f9f94e5b53e9c812140c9cee1c/docs/verification.md), [client design](https://github.com/portpowered/go-third-party-template/blob/2f21da33e8acc0f9f94e5b53e9c812140c9cee1c/docs/client-design.md), and [website publishing](https://github.com/portpowered/go-third-party-template/blob/2f21da33e8acc0f9f94e5b53e9c812140c9cee1c/docs/website.md).
