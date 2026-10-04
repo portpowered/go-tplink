@@ -89,7 +89,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ github.ref_name }}
-        run: gh release create "$VERSION" --verify-tag --generate-notes
+        run: |
+          gh release create "$VERSION" --verify-tag --generate-notes \
+            --notes "Transport type identities changed in v0.3. See the [upgrade guide](https://portpowered.github.io/go-tplink/docs/guides/upgrading/)."
 
   verify-cli-and-publish:
     if: startsWith(github.ref, 'refs/tags/cmd/go-tplink/v')

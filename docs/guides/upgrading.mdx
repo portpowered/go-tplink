@@ -1,0 +1,18 @@
+---
+title: Upgrade to v0.3
+description: Check transport type identities when updating from v0.2.1.
+---
+
+# Upgrade to v0.3
+
+`tplink.HTTPDoer` is now an alias of
+`pkg/dependencies/cloud.HTTPDoer`. `WithHTTPClient` uses this shared transport
+interface. Its `Do(*http.Request) (*http.Response, error)` method is unchanged,
+and `*http.Client` still implements it.
+
+The defining package identity changed. Rebuild your application and check
+custom transport interfaces, function signatures, and reflection-based code.
+Use the SDK's `tplink.HTTPDoer` name when declaring transport inputs.
+
+See [authentication and transport configuration](/docs/guides/authentication)
+and the [Go API reference](https://pkg.go.dev/github.com/portpowered/go-tplink/pkg/tplink).

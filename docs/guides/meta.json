@@ -1,4 +1,4 @@
 {
   "title": "Guides",
-  "pages": ["index", "authentication", "devices", "plugs", "lighting", "cli", "errors"]
+  "pages": ["index", "authentication", "devices", "plugs", "lighting", "cli", "errors", "upgrading"]
 }
