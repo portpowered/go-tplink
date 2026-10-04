@@ -44,23 +44,54 @@ func main() {
 }
 
 func run() error {
-	const rootSchema = "api/openapi.yaml"
-
-	data, err := os.ReadFile(rootSchema)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", rootSchema, err)
-	}
-
-	var schema map[string]any
-
-	err = yaml.Unmarshal(data, &schema)
-	if err != nil {
-		return fmt.Errorf("parse %s: %w", rootSchema, err)
-	}
-
 	gen := generator{constants: make(map[string]constant)}
+	paths := []string{
+		"api/openapi.yaml",
+		"api/cloud-envelope.openapi.yaml",
+		"api/authentication.openapi.yaml",
+		"api/devices.openapi.yaml",
+		"api/passthrough.openapi.yaml",
+	}
 
-	err = gen.collectSchemaMetadata(schema)
+	schemas := make([]map[string]any, 0, len(paths))
+
+	for _, path := range paths {
+		//nolint:gosec // These are fixed checked-in schema paths listed above.
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+
+		var schema map[string]any
+
+		err = yaml.Unmarshal(data, &schema)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", path, err)
+		}
+
+		schemas = append(schemas, schema)
+
+		if path == paths[0] {
+			err = gen.collectEndpointMetadata(schema)
+			if err != nil {
+				return fmt.Errorf("collect endpoint metadata from %s: %w", path, err)
+			}
+		}
+
+		err = gen.collectSchemaMetadata(schema)
+		if err != nil {
+			return fmt.Errorf("collect metadata from %s: %w", path, err)
+		}
+	}
+
+	merged := mergeSchemaComponents(schemas)
+
+	err := gen.validateRequiredConstants()
+	if err != nil {
+		return err
+	}
+
+	err = validateWireSchemaShape(merged)
 	if err != nil {
 		return err
 	}
@@ -69,12 +100,15 @@ func run() error {
 }
 
 func (gen *generator) collectSchemaMetadata(schema map[string]any) error {
+	return gen.collectSchemaProperties(schema)
+}
+
+func (gen *generator) collectEndpointMetadata(schema map[string]any) error {
 	collectors := []func(map[string]any) error{
 		gen.collectServers,
 		gen.collectRoutes,
 		gen.collectParameters,
 		gen.collectRequestMedia,
-		gen.collectSchemaProperties,
 	}
 	for _, collect := range collectors {
 		err := collect(schema)
@@ -83,12 +117,29 @@ func (gen *generator) collectSchemaMetadata(schema map[string]any) error {
 		}
 	}
 
-	err := gen.validateRequiredConstants()
-	if err != nil {
-		return err
+	return nil
+}
+
+func mergeSchemaComponents(documents []map[string]any) map[string]any {
+	schemas := make(map[string]any)
+
+	for _, document := range documents {
+		components := object(document["components"])
+		for name, schema := range object(components["schemas"]) {
+			prior, exists := schemas[name]
+			if !exists || (isSchemaReference(prior) && !isSchemaReference(schema)) {
+				schemas[name] = schema
+			}
+		}
 	}
 
-	return validateWireSchemaShape(schema)
+	return map[string]any{"components": map[string]any{"schemas": schemas}}
+}
+
+func isSchemaReference(schema any) bool {
+	_, found := object(schema)["$ref"]
+
+	return found
 }
 
 func (gen *generator) writeOutputs() error {
@@ -550,14 +601,35 @@ func validateWireSchemaShape(schema map[string]any) error {
 }
 
 func generateModelAliases() error {
-	const sourcePath = "pkg/dependencymodels/models.gen.go"
+	sourcePaths := []string{
+		"pkg/dependencymodels/cloud_envelope.gen.go",
+		"pkg/dependencymodels/authentication.gen.go",
+		"pkg/dependencymodels/devices.gen.go",
+		"pkg/dependencymodels/passthrough.gen.go",
+		"pkg/dependencymodels/cloud_request_compat.gen.go",
+	}
+	typeSet := make(map[string]bool)
 
-	source, err := parser.ParseFile(token.NewFileSet(), sourcePath, nil, 0)
-	if err != nil {
-		return fmt.Errorf("parse generated models %s: %w", sourcePath, err)
+	constantSet := make(map[string]bool)
+
+	for _, sourcePath := range sourcePaths {
+		source, err := parser.ParseFile(token.NewFileSet(), sourcePath, nil, 0)
+		if err != nil {
+			return fmt.Errorf("parse generated models %s: %w", sourcePath, err)
+		}
+
+		types, constants := collectModelSymbols(source)
+		for _, name := range types {
+			typeSet[name] = true
+		}
+
+		for _, name := range constants {
+			constantSet[name] = true
+		}
 	}
 
-	types, constants := collectModelSymbols(source)
+	types := sortedSet(typeSet)
+	constants := sortedSet(constantSet)
 
 	var output strings.Builder
 
@@ -576,6 +648,17 @@ func generateModelAliases() error {
 	}
 
 	return writeFormatted("pkg/generatedwire/compat.gen.go", formatted)
+}
+
+func sortedSet(values map[string]bool) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		result = append(result, value)
+	}
+
+	sort.Strings(result)
+
+	return result
 }
 
 func collectModelSymbols(source *ast.File) ([]string, []string) {

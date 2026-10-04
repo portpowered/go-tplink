@@ -1,0 +1,43 @@
+package: dependencymodels
+generate:
+  models: true
+output: pkg/dependencymodels/cloud_request_compat.gen.go
+output-options:
+  skip-prune: true
+  exclude-schemas:
+    - CloudRequest
+    - LoginCloudRequest
+    - GetDeviceListCloudRequest
+    - PassthroughCloudRequest
+    - LoginParams
+    - PassthroughParams
+    - PassthroughCommand
+    - SystemGetSysInfoCommand
+    - SystemSetRelayStateCommand
+    - SystemRebootCommand
+    - SystemSetDevAliasCommand
+    - LightingGetLightStateCommand
+    - LightingTransitionLightStateCommand
+    - LightTransitionState
+    - CloudResponseEnvelope
+    - CloudResponse
+    - CloudErrorResponse
+    - LoginResponse
+    - LoginResult
+    - DeviceListResponse
+    - DeviceListResult
+    - Device
+    - PassthroughResponse
+    - PassthroughResult
+    - PassthroughCommandResult
+    - SystemCommandResult
+    - LightingCommandResult
+    - CommandAcknowledgement
+    - DeviceCommandError
+    - SysInfo
+    - LightState
+import-mapping:
+  ./cloud-envelope.openapi.yaml: "-"
+  ./authentication.openapi.yaml: "-"
+  ./devices.openapi.yaml: "-"
+  ./passthrough.openapi.yaml: "-"

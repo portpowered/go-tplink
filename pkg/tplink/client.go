@@ -51,7 +51,7 @@ type Option interface {
 // NewClient creates a TP-Link Cloud API client with optional transport and
 // regional endpoint overrides.
 func NewClient(options ...Option) (*Client, error) {
-	baseURL, err := parseBaseURL(DefaultBaseURL)
+	baseURL, err := parseBaseURL(dependencymodels.DefaultBaseURL)
 	if err != nil {
 		return nil, tplinkmodels.NewConfigurationError("invalid default base URL", err)
 	}

@@ -1,6 +1,6 @@
 # go-tplink checklist
 
-Requirements copied from the shared template at `987b9c34a6b927472c21604617b6842a4238746b`.
+Requirements copied from the shared template at `25aeb783126c4049b3bc49286ee7808069db28e9`.
 
 Earlier scoped lint and replay reviews do not certify these expanded requirements.
 Keep every item open until two independent reviewers verify all items at the final
@@ -31,6 +31,12 @@ implementation commit.
    as well as JSON objects. Negative controls must reject a novel unregistered fixed value or
    key in a generated wire object, later field mutations, local aliases, and forged generated
    markers; a denylist of already-known literal values alone is insufficient.
+   Follow wire values and map provenance through helper arguments and returns,
+   including named results with bare returns, local aliases, and returned callbacks.
+   Add negative controls for a novel fixed value returned through a named result and
+   a generated map escaping through a named result to an unverified helper. Retain
+   positive controls for caller-defined values; do not treat diagnostic or error
+   return values as wire payloads merely because they share a helper.
    Check all intermediate keys in indexed receiver paths and aliases, including slices,
    pointer dereferences, and type assertions. Test inferred nested composites and retain
    positive cases for explicitly caller-defined open keys.
@@ -123,4 +129,4 @@ implementation commit.
 
 - [ ] **16.** Provide an installable standalone CLI that consumes the public SDK so customers can test the library without a consuming application. Use a separate module under `cmd/go-<provider>`; keep CLI concerns out of the SDK. Cover authentication and explicit token exchange, device or endpoint discovery, important read/control workflows, and event/session lifecycles where supported. Include useful help, machine-readable output, nonzero failures, cancellation, and session cleanup. Accept credentials through documented environment, stdin, or explicit file inputs; keep secrets out of arguments and ordinary output, and make credential export an explicit action. Require explicit commands for device changes. Document installation and customer examples in an MDX guide. Test CLI commands offline through injected paired request/response transports, including authentication errors and lifecycle cleanup, and run blocking pinned all-linter, build, test, and module checks for the CLI in CI. Verify a separate consumer installation from the published CLI module and release its module tags with the SDK.
 
-See [verification](https://github.com/portpowered/go-third-party-template/blob/987b9c34a6b927472c21604617b6842a4238746b/docs/verification.md), [client design](https://github.com/portpowered/go-third-party-template/blob/987b9c34a6b927472c21604617b6842a4238746b/docs/client-design.md), and [website publishing](https://github.com/portpowered/go-third-party-template/blob/987b9c34a6b927472c21604617b6842a4238746b/docs/website.md).
+See [verification](https://github.com/portpowered/go-third-party-template/blob/25aeb783126c4049b3bc49286ee7808069db28e9/docs/verification.md), [client design](https://github.com/portpowered/go-third-party-template/blob/25aeb783126c4049b3bc49286ee7808069db28e9/docs/client-design.md), and [website publishing](https://github.com/portpowered/go-third-party-template/blob/25aeb783126c4049b3bc49286ee7808069db28e9/docs/website.md).

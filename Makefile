@@ -57,8 +57,14 @@ api-compatibility:
 
 # oapi-codegen v2.8.0 requires Go 1.25+; GOTOOLCHAIN=auto downloads it when needed.
 generate-api:
-	$(GO) run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config pkg/dependencymodels/config.yaml api/openapi.yaml
+	$(GO) run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config pkg/dependencymodels/config.yaml api/cloud-envelope.openapi.yaml
+	$(GO) run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config pkg/dependencymodels/config-authentication.yaml api/authentication.openapi.yaml
+	$(GO) run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config pkg/dependencymodels/config-devices.yaml api/devices.openapi.yaml
+	$(GO) run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config pkg/dependencymodels/config-passthrough.yaml api/passthrough.openapi.yaml
+	$(GO) run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config pkg/dependencymodels/config-route-compat.yaml api/openapi.yaml
 	$(GO) run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config pkg/tplinkmodels/config.yaml api/client-models.openapi.yaml
+	$(GO) run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config cmd/go-tplink/config.yaml api/cli-contracts.openapi.yaml
 	$(GO) run ./tools/wireconstants
 	$(GO) fmt ./pkg/dependencymodels ./pkg/generatedwire ./pkg/tplink ./pkg/tplinkmodels
+	gofmt -w cmd/go-tplink/models.gen.go
 	$(GO) run ./tools/wireinventory

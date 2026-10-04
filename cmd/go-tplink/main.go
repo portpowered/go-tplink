@@ -233,7 +233,7 @@ func parseLoginInput(
 	deps dependencies,
 	inputReader io.Reader,
 	out io.Writer,
-) (loginCredentials, bool, error) {
+) (LoginCredentials, bool, error) {
 	var (
 		stdinInput      bool
 		credentialsFile string
@@ -244,24 +244,24 @@ func parseLoginInput(
 		flags.StringVar(&credentialsFile, "credentials-file", "", "read email and password from a protected JSON file")
 	})
 	if err != nil {
-		return loginCredentials{}, false, err
+		return LoginCredentials{}, false, err
 	}
 
 	if help {
-		return loginCredentials{Email: "", Password: ""}, true, nil
+		return LoginCredentials{Email: "", Password: ""}, true, nil
 	}
 
 	if len(remaining) != 0 || (stdinInput && credentialsFile != "") {
-		return loginCredentials{}, false, commandError("usage: go-tplink auth login [--stdin | --credentials-file path]")
+		return LoginCredentials{}, false, commandError("usage: go-tplink auth login [--stdin | --credentials-file path]")
 	}
 
 	credentials, err := readLoginCredentials(stdinInput, credentialsFile, deps, inputReader, out)
 	if err != nil {
-		return loginCredentials{}, false, err
+		return LoginCredentials{}, false, err
 	}
 
 	if credentials.Email == "" || credentials.Password == "" {
-		return loginCredentials{}, false, commandError("email and password are required")
+		return LoginCredentials{}, false, commandError("email and password are required")
 	}
 
 	return credentials, false, nil
@@ -271,7 +271,7 @@ func performLogin(
 	ctx context.Context,
 	store credentialStore,
 	deps dependencies,
-	credentials loginCredentials,
+	credentials LoginCredentials,
 	out io.Writer,
 ) error {
 	var resultToken string
@@ -297,7 +297,7 @@ func performLogin(
 		return err
 	}
 
-	err = store.save(storedCredentials{AccessToken: resultToken})
+	err = store.save(StoredCredentials{AccessToken: resultToken})
 	if err != nil {
 		return fmt.Errorf("save credentials: %w", err)
 	}
@@ -325,13 +325,13 @@ func authStatus(store credentialStore, args []string, out io.Writer) error {
 		return commandError("usage: go-tplink auth status [--json]")
 	}
 
-	_, err = store.load()
+	credentials, err := store.load()
 	if err != nil {
 		return err
 	}
 
 	if jsonOutput {
-		return writeJSON(out, map[string]bool{"authenticated": true})
+		return writeJSON(out, AuthStatusOutput{Authenticated: credentials.AccessToken != ""})
 	}
 
 	_, _ = fmt.Fprintln(out, "Authenticated; a saved session token is available")
@@ -362,7 +362,7 @@ func authExport(store credentialStore, args []string, out io.Writer) error {
 		return err
 	}
 
-	err = writeProtectedExport(outputPath, storedCredentials{AccessToken: credentials.AccessToken})
+	err = writeProtectedExport(outputPath, StoredCredentials{AccessToken: credentials.AccessToken})
 	if err != nil {
 		return fmt.Errorf("export credentials: %w", err)
 	}
@@ -410,50 +410,40 @@ func devicesCommand(
 				return safeOperationError("list devices", requestErr, auth.AccessToken)
 			}
 
-			summaries := make([]deviceSummary, 0, len(result.Devices))
+			summaries := make([]DeviceSummary, 0, len(result.Devices))
 			for _, device := range result.Devices {
-				summaries = append(summaries, deviceSummary{
-					ID:     device.DeviceID,
-					Name:   device.Alias,
-					Model:  device.DeviceModel,
-					Type:   device.DeviceType,
-					Status: device.Status,
+				summaries = append(summaries, DeviceSummary{
+					DeviceId:   device.DeviceID,
+					Alias:      device.Alias,
+					Model:      device.DeviceModel,
+					DeviceType: device.DeviceType,
+					Status:     device.Status,
 				})
 			}
 
-			if jsonOutput {
-				return writeJSON(out, summaries)
-			}
-
-			for _, device := range summaries {
-				_, _ = fmt.Fprintf(out, "%s\t%s\t%s\t%s\t%d\n", device.ID, device.Name, device.Model, device.Type, device.Status)
-			}
-
-			return nil
+			return writeDeviceSummaries(out, summaries, jsonOutput)
 		},
 	)
 }
 
-type deviceSummary struct {
-	ID     string `json:"deviceId"`
-	Name   string `json:"alias"`
-	Model  string `json:"model"`
-	Type   string `json:"deviceType"`
-	Status int    `json:"status"`
-}
+func writeDeviceSummaries(out io.Writer, summaries []DeviceSummary, jsonOutput bool) error {
+	if jsonOutput {
+		return writeJSON(out, summaries)
+	}
 
-type powerStateOutput struct {
-	IsOn   bool `json:"isOn"`
-	OnTime int  `json:"onTime"`
-}
+	for _, device := range summaries {
+		_, _ = fmt.Fprintf(
+			out,
+			"%s\t%s\t%s\t%s\t%d\n",
+			device.DeviceId,
+			device.Alias,
+			device.Model,
+			device.DeviceType,
+			device.Status,
+		)
+	}
 
-type lightStateOutput struct {
-	IsOn       bool   `json:"isOn"`
-	Brightness int    `json:"brightness"`
-	Hue        int    `json:"hue"`
-	Saturation int    `json:"saturation"`
-	ColorTemp  int    `json:"colorTemp"`
-	Mode       string `json:"mode"`
+	return nil
 }
 
 func plugCommand(
@@ -518,7 +508,7 @@ func plugStateCommand(
 			}
 
 			if jsonOutput {
-				return writeJSON(out, powerStateOutput{IsOn: state.IsOn, OnTime: state.OnTime})
+				return writeJSON(out, PowerStateOutput{IsOn: state.IsOn, OnTime: state.OnTime})
 			}
 
 			return printPowerState(out, state.IsOn, state.OnTime)
@@ -631,7 +621,7 @@ func bulbStateCommand(
 			}
 
 			if jsonOutput {
-				return writeJSON(out, lightStateOutput{
+				return writeJSON(out, LightStateOutput{
 					IsOn:       state.OnOff != 0,
 					Brightness: state.Brightness,
 					Hue:        state.Hue,

@@ -1,0 +1,77 @@
+openapi: 3.1.0
+info:
+  title: TP-Link Kasa Cloud API wire models
+  version: 0.1.0
+  description: >-
+    Implementation-derived schema components for the current client. These
+    models and synthetic replay fixtures are not vendor-issued or verified
+    against live captures.
+components:
+  schemas:
+    LoginCloudRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - method
+        - params
+      properties:
+        method:
+          type: string
+          enum:
+            - login
+          x-go-compat-constant-names:
+            - value: login
+              name: MethodLogin
+        params:
+          $ref: '#/components/schemas/LoginParams'
+    LoginParams:
+      type: object
+      additionalProperties: false
+      required:
+        - appType
+        - cloudUserName
+        - cloudPassword
+        - terminalUUID
+      properties:
+        appType:
+          type: string
+          enum:
+            - Tapo_Android
+          x-go-compat-constant-name: AppType
+          x-go-wire-constant-value: true
+          description: Fixed appType value sent by this client.
+        cloudUserName:
+          type: string
+          description: Account email supplied to Login.
+        cloudPassword:
+          type: string
+          writeOnly: true
+          description: Account password supplied to Login.
+        terminalUUID:
+          type: string
+          enum:
+            - go-tplink-client
+          x-go-wire-constant-name: TerminalUUID
+          x-go-wire-constant-value: true
+          description: Fixed terminalUUID value sent by this client.
+    LoginResponse:
+      allOf:
+        - $ref: './cloud-envelope.openapi.yaml#/components/schemas/CloudResponse'
+        - type: object
+          properties:
+            result:
+              $ref: '#/components/schemas/LoginResult'
+    LoginResult:
+      type: object
+      properties:
+        accountId:
+          type: string
+        token:
+          type: string
+          description: Opaque session token for subsequent authenticated requests.
+        email:
+          type: string
+        regTime:
+          type: string
+        countryCode:
+          type: string

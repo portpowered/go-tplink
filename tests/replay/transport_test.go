@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"reflect"
 	"slices"
@@ -444,14 +445,48 @@ func matchFixtureQuery(actual, expected url.Values) error {
 }
 
 func matchFixtureHeaders(actual http.Header, expected map[string][]string) error {
-	for name, values := range expected {
-		err := compareFixtureValues("header", name, actual.Values(name), values)
+	actualValues := canonicalHeaderValues(actual)
+	expectedValues := canonicalHeaderValues(http.Header(expected))
+
+	if len(actualValues) != len(expectedValues) {
+		return replayDiagnosticErrorf("header names = %v, want %v", headerNames(actualValues), headerNames(expectedValues))
+	}
+
+	for name, values := range expectedValues {
+		actualHeaderValues, found := actualValues[name]
+		if !found {
+			return replayDiagnosticErrorf("header %s is missing", name)
+		}
+
+		err := compareFixtureValues("header", name, actualHeaderValues, values)
 		if err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func canonicalHeaderValues(headers http.Header) map[string][]string {
+	canonical := make(map[string][]string, len(headers))
+
+	for name, values := range headers {
+		key := textproto.CanonicalMIMEHeaderKey(name)
+		canonical[key] = append(canonical[key], values...)
+	}
+
+	return canonical
+}
+
+func headerNames(headers map[string][]string) []string {
+	names := make([]string, 0, len(headers))
+	for name := range headers {
+		names = append(names, name)
+	}
+
+	slices.Sort(names)
+
+	return names
 }
 
 func compareFixtureValues(label, name string, actual, expected []string) error {

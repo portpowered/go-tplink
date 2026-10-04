@@ -24,18 +24,29 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: '1.26.x'
           cache: true
+      - name: Lint SDK and wire tools with all linters (golangci-lint v2.14.0)
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          args: --allow-parallel-runners ./...
+      - name: Lint standalone CLI module with all linters (golangci-lint v2.14.0)
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          working-directory: cmd/go-tplink
+          args: --config .golangci.yml --allow-parallel-runners ./...
+      - name: Regenerate API models and wire inventory
+        run: make generate-api
+      - name: Check generated model drift
+        run: git diff --exit-code -- pkg/dependencymodels pkg/generatedwire pkg/tplink/constants.gen.go pkg/tplinkmodels cmd/go-tplink/models.gen.go
       - name: Check public API compatibility
         env:
           VERSION: ${{ github.ref_name }}
         run: go run ./tools/compatibility -policy release -base previous-release -version "$VERSION" -module "$PUBLIC_MODULE" -packages "$PUBLIC_PACKAGES"
-      - name: Test
-        run: go test -race ./...
-      - name: Enforce replay coverage floor
-        run: go run ./tools/replaycoverage
-      - name: Vet
-        run: go vet ./...
+      - name: Run all module build, race, lint, inventory, coverage, and metadata checks
+        run: make check
       - name: Verify public module from a consumer
         env:
           VERSION: ${{ github.ref_name }}

@@ -2,7 +2,7 @@
   "request": {
     "method": "POST",
     "origin": "https://wap.tplinkcloud.com",
-    "path": "",
+    "path": "/",
     "query": {},
     "headers": {
       "Content-Type": [

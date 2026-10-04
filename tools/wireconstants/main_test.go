@@ -60,23 +60,13 @@ func TestRequiredNestedPayloadAndWireDefinitionsAreGated(t *testing.T) {
 func TestCallerOpenStateAndTypedResultVariantsAreRequired(t *testing.T) {
 	t.Parallel()
 
-	data, err := os.ReadFile("../../api/openapi.yaml")
-	if err != nil {
-		t.Fatalf("read API schema: %v", err)
-	}
-
-	var fixture map[string]any
-
-	err = yaml.Unmarshal(data, &fixture)
-	if err != nil {
-		t.Fatalf("parse API schema: %v", err)
-	}
+	fixture := mergedWireSchemaForTest(t)
 
 	schemas := object(object(fixture["components"])["schemas"])
 	lightState := object(schemas["LightTransitionState"])
 	lightState["additionalProperties"] = false
 
-	err = validateWireSchemaShape(fixture)
+	err := validateWireSchemaShape(fixture)
 	if err == nil || !strings.Contains(err.Error(), "LightTransitionState") {
 		t.Fatalf("validateWireSchemaShape() error = %v, want caller-open state failure", err)
 	}
@@ -96,4 +86,71 @@ func TestCallerOpenStateAndTypedResultVariantsAreRequired(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "LightingTransitionLightStateCommand") {
 		t.Fatalf("validateWireSchemaShape() error = %v, want missing nested payload failure", err)
 	}
+}
+
+func TestWireSchemasAreSplitByResponsibility(t *testing.T) {
+	t.Parallel()
+
+	fixtures := map[string]string{
+		"../../api/cloud-envelope.openapi.yaml": "CloudRequest",
+		"../../api/authentication.openapi.yaml": "LoginParams",
+		"../../api/devices.openapi.yaml":        "Device",
+		"../../api/passthrough.openapi.yaml":    "PassthroughCommand",
+	}
+	for path, expectedComponent := range fixtures {
+		//nolint:gosec // Fixtures use fixed repository-relative schema paths.
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+
+		var document map[string]any
+
+		err = yaml.Unmarshal(data, &document)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+
+		if _, found := object(object(document["components"])["schemas"])[expectedComponent]; !found {
+			t.Errorf("%s does not define responsibility component %s", path, expectedComponent)
+		}
+	}
+
+	merged := mergedWireSchemaForTest(t)
+	if count := len(object(object(merged["components"])["schemas"])); count != 31 {
+		t.Fatalf("merged wire schema has %d components, want 31", count)
+	}
+}
+
+func mergedWireSchemaForTest(t *testing.T) map[string]any {
+	t.Helper()
+
+	paths := []string{
+		"../../api/openapi.yaml",
+		"../../api/cloud-envelope.openapi.yaml",
+		"../../api/authentication.openapi.yaml",
+		"../../api/devices.openapi.yaml",
+		"../../api/passthrough.openapi.yaml",
+	}
+
+	documents := make([]map[string]any, 0, len(paths))
+
+	for _, path := range paths {
+		//nolint:gosec // Fixtures use fixed repository-relative schema paths.
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+
+		var document map[string]any
+
+		err = yaml.Unmarshal(data, &document)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+
+		documents = append(documents, document)
+	}
+
+	return mergeSchemaComponents(documents)
 }

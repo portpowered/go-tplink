@@ -1,6 +1,10 @@
 package: dependencymodels
 generate:
   models: true
-output: pkg/dependencymodels/models.gen.go
+output: pkg/dependencymodels/cloud_envelope.gen.go
 output-options:
   skip-prune: true
+import-mapping:
+  ./authentication.openapi.yaml: "-"
+  ./devices.openapi.yaml: "-"
+  ./passthrough.openapi.yaml: "-"

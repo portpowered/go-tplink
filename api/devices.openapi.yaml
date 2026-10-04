@@ -1,0 +1,127 @@
+openapi: 3.1.0
+info:
+  title: TP-Link Kasa Cloud API wire models
+  version: 0.1.0
+  description: >-
+    Implementation-derived schema components for the current client. These
+    models and synthetic replay fixtures are not vendor-issued or verified
+    against live captures.
+components:
+  schemas:
+    GetDeviceListCloudRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - method
+      properties:
+        method:
+          type: string
+          enum:
+            - getDeviceList
+          x-go-compat-constant-names:
+            - value: getDeviceList
+              name: MethodGetDeviceList
+      description: The implemented client sends no params for this method.
+    DeviceListResponse:
+      allOf:
+        - $ref: './cloud-envelope.openapi.yaml#/components/schemas/CloudResponse'
+        - type: object
+          properties:
+            result:
+              $ref: '#/components/schemas/DeviceListResult'
+    DeviceListResult:
+      type: object
+      description: The array may be empty. Each element is a cloud device record.
+      properties:
+        deviceList:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+    Device:
+      type: object
+      description: >-
+        Cloud device record. The client retains records with unknown deviceType
+        values, but its Go model does not retain fields outside those listed here.
+      properties:
+        deviceType:
+          type: string
+          description: >-
+            The client classifies the known plug and bulb values below; other
+            values remain valid and are classified as Other.
+          x-extensible-enum:
+            - IOT.SMARTPLUGSWITCH
+            - IOT.RANGEEXTENDER.SMARTPLUG
+            - IOT.SMARTBULB
+          x-go-wire-constant-names:
+            - value: IOT.SMARTPLUGSWITCH
+              name: DeviceTypeSmartPlug
+            - value: IOT.RANGEEXTENDER.SMARTPLUG
+              name: DeviceTypeRangeExtenderPlug
+            - value: IOT.SMARTBULB
+              name: DeviceTypeSmartBulb
+        deviceId:
+          type: string
+          description: Pass this value as params.deviceId for passthrough commands.
+        alias:
+          type: string
+          description: Display name shown to the user.
+        deviceModel:
+          type: string
+        deviceMac:
+          type: string
+        fwVer:
+          type: string
+        deviceHwVer:
+          type: string
+        hwId:
+          type: string
+        fwId:
+          type: string
+        oemId:
+          type: string
+        appServerUrl:
+          type: string
+          format: uri
+        deviceRegion:
+          type: string
+        status:
+          type: integer
+          description: Cloud-reported status; interpretation may vary by device.
+        isSameRegion:
+          type: boolean
+        is_dimmable:
+          type: integer
+          description: Cloud-reported capability flag; 1 indicates dimming support.
+          x-extensible-enum:
+            - 0
+            - 1
+          x-go-wire-constant-names:
+            - value: 0
+              name: DeviceCapabilityDisabled
+            - value: 1
+              name: DeviceCapabilityEnabled
+        is_color:
+          type: integer
+          description: Cloud-reported capability flag; 1 indicates color support.
+          x-extensible-enum:
+            - 0
+            - 1
+          x-go-wire-constant-names:
+            - value: 0
+              name: DeviceCapabilityDisabled
+            - value: 1
+              name: DeviceCapabilityEnabled
+        is_variable_color_temp:
+          type: integer
+          description: Cloud-reported capability flag; 1 indicates color temperature support.
+          x-extensible-enum:
+            - 0
+            - 1
+          x-go-wire-constant-names:
+            - value: 0
+              name: DeviceCapabilityDisabled
+            - value: 1
+              name: DeviceCapabilityEnabled
+        brightness:
+          type: integer
+      additionalProperties: true

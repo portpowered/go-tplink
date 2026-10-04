@@ -1,0 +1,8 @@
+package: main
+generate:
+  models: true
+output: cmd/go-tplink/models.gen.go
+output-options:
+  skip-prune: true
+  user-templates:
+    imports.tmpl: cmd/go-tplink/templates/imports.tmpl

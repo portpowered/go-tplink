@@ -28,6 +28,13 @@ const (
 	mapAllocationMessage        = "map allocation in handwritten SDK source; use a generated wire DTO"
 	rawWireStringMessage        = "raw schema-defined wire string in handwritten SDK source; " +
 		"use dependencymodels constants"
+	handwrittenJSONModelMessage = "handwritten JSON model in production source; add a schema and generated DTO"
+	anonymousJSONModelMessage   = "anonymous JSON object in production source; add a named schema component"
+	generatedOutputMissing      = "registered generated output is missing"
+	generatedOutputUntracked    = "generated output is not tracked by Git"
+	generatedOutputUnknown      = "unregistered generated output"
+	generatedSchemaMissing      = "schema component has no generated Go model"
+	generatedTypeUndocumented   = "schema component is missing from the wire-model inventory"
 )
 
 var errWireInventoryViolation = errors.New("wire inventory violation")
@@ -37,10 +44,10 @@ func requiredGeneratedUses() []string {
 		"AppType", "CloudErrorCodeAuthentication", "CloudErrorCodeOK", "CloudErrorCodeParameter",
 		"CloudErrorCodeRateLimited", "CloudErrorCodeTokenExpired",
 		"CloudRequestContentType", "CloudRequestContentTypeHeader", "CloudRequestHTTPMethod",
-		"CloudRequestPath", "CmdGetLightState", "CmdGetSysInfo",
+		"CloudRequestPath", "DefaultBaseURL", "CmdGetLightState", "CmdGetSysInfo",
 		"CmdReboot", "CmdSetDevAlias", "CmdSetRelayState", "CmdTransitionLightState",
-		"DeviceCapabilityEnabled", "DeviceErrorOK", "DeviceErrorUnsupported",
-		"DeviceStateOn", "DeviceTypeRangeExtenderPlug", "DeviceTypeSmartBulb", "DeviceTypeSmartPlug",
+		"DeviceCapabilityDisabled", "DeviceCapabilityEnabled", "DeviceErrorOK", "DeviceErrorUnsupported",
+		"DeviceStateOff", "DeviceStateOn", "DeviceTypeRangeExtenderPlug", "DeviceTypeSmartBulb", "DeviceTypeSmartPlug",
 		"MethodGetDeviceList", "MethodLogin", "MethodPassthrough", "NamespaceLightingService",
 		"NamespaceSystem", "TerminalUUID", "TokenQueryKey",
 	}
@@ -55,7 +62,34 @@ func main() {
 }
 
 func checkRepository(root string) error {
+	absoluteRoot, err := filepath.Abs(root)
+	if err != nil {
+		return fmt.Errorf("resolve repository root: %w", err)
+	}
+
+	root = absoluteRoot
+
+	err = checkGeneratedOutputs(root)
+	if err != nil {
+		return err
+	}
+
 	wireValues, generatedMaps, err := readGeneratedInventory(root)
+	if err != nil {
+		return err
+	}
+
+	generatedTypes, err := readGeneratedModelTypes(root)
+	if err != nil {
+		return err
+	}
+
+	err = checkGeneratedSchemaModels(root, generatedTypes)
+	if err != nil {
+		return err
+	}
+
+	err = checkEndpointInventory(root)
 	if err != nil {
 		return err
 	}
@@ -67,7 +101,12 @@ func checkRepository(root string) error {
 
 	uses := make(map[string]bool)
 
-	err = checkProductionFiles(paths, generatedMaps, wireValues, uses)
+	err = checkProductionFiles(paths, generatedMaps, wireValues, generatedTypes, uses)
+	if err != nil {
+		return err
+	}
+
+	err = checkEndpointCallSite(root)
 	if err != nil {
 		return err
 	}
@@ -83,11 +122,19 @@ func readGeneratedInventory(root string) (map[string]bool, map[string]bool, erro
 		return nil, nil, err
 	}
 
-	modelPath := filepath.Join(root, "pkg", "dependencymodels", "models.gen.go")
+	generatedMaps := make(map[string]bool)
 
-	generatedMaps, err := readGeneratedMapTypes(modelPath)
-	if err != nil {
-		return nil, nil, err
+	for _, source := range generatedModelSources() {
+		modelPath := filepath.Join(root, filepath.FromSlash(source.outputPath))
+
+		modelMaps, err := readGeneratedMapTypes(modelPath)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		for name := range modelMaps {
+			generatedMaps[name] = true
+		}
 	}
 
 	return wireValues, generatedMaps, nil
@@ -100,6 +147,9 @@ func productionGoFiles(root string) ([]string, error) {
 		filepath.Join(root, "pkg", "tplink"),
 		filepath.Join(root, "pkg", "tplinkmodels"),
 		filepath.Join(root, "pkg", "dependencies"),
+		filepath.Join(root, "pkg", "dependencymodels"),
+		filepath.Join(root, "pkg", "generatedwire"),
+		filepath.Join(root, "cmd", "go-tplink"),
 	}
 
 	for _, directory := range directories {
@@ -139,10 +189,15 @@ func checkProductionFiles(
 	paths []string,
 	generatedMaps map[string]bool,
 	wireValues map[string]bool,
+	generatedTypes map[string]bool,
 	uses map[string]bool,
 ) error {
 	for _, path := range paths {
-		err := checkProductionFile(path, generatedMaps, wireValues, uses)
+		if isRegisteredGeneratedPath(path) {
+			continue
+		}
+
+		err := checkProductionFile(path, generatedMaps, wireValues, generatedTypes, uses)
 		if err != nil {
 			return err
 		}
@@ -151,7 +206,7 @@ func checkProductionFiles(
 	return nil
 }
 
-func checkProductionFile(path string, generatedMaps, wireValues, uses map[string]bool) error {
+func checkProductionFile(path string, generatedMaps, wireValues, generatedTypes, uses map[string]bool) error {
 	fileSet := token.NewFileSet()
 
 	file, err := parser.ParseFile(fileSet, path, nil, parser.ParseComments)
@@ -159,11 +214,25 @@ func checkProductionFile(path string, generatedMaps, wireValues, uses map[string
 		return fmt.Errorf("parse %s: %w", path, err)
 	}
 
-	if ast.IsGenerated(file) {
-		return nil
+	if !strings.HasSuffix(filepath.ToSlash(path), "pkg/dependencies/cloud/cloud.go") {
+		err := checkUnregisteredNetworkPrimitives(path, fileSet, file)
+		if err != nil {
+			return err
+		}
 	}
 
-	return checkFile(path, fileSet, file, generatedMaps, wireValues, uses)
+	return checkFile(path, fileSet, file, generatedMaps, wireValues, generatedTypes, uses)
+}
+
+func isRegisteredGeneratedPath(path string) bool {
+	clean := filepath.Clean(path)
+	for _, output := range registeredGeneratedOutputs() {
+		if strings.HasSuffix(clean, filepath.Clean(filepath.FromSlash(output))) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func requireGeneratedUses(uses map[string]bool) error {
@@ -183,7 +252,7 @@ func checkFile(
 	path string,
 	fileSet *token.FileSet,
 	file *ast.File,
-	generatedMaps, wireValues, uses map[string]bool,
+	generatedMaps, wireValues, generatedTypes, uses map[string]bool,
 ) error {
 	err := checkFunctionBodies(path, fileSet, file)
 	if err != nil {
@@ -195,9 +264,24 @@ func checkFile(
 		return err
 	}
 
+	err = checkHandwrittenJSONModels(path, fileSet, file)
+	if err != nil {
+		return err
+	}
+
+	err = checkGeneratedScalarValues(path, fileSet, file, generatedTypes)
+	if err != nil {
+		return err
+	}
+
 	collectGeneratedUses(file, uses)
 
-	return checkRawWireStrings(path, fileSet, file, wireValues)
+	err = checkRawWireStrings(path, fileSet, file, wireValues)
+	if err != nil {
+		return err
+	}
+
+	return checkEndpointKeyConstruction(path, fileSet, file)
 }
 
 func checkFunctionBodies(path string, fileSet *token.FileSet, file *ast.File) error {
@@ -217,7 +301,20 @@ func checkFunctionBodies(path string, fileSet *token.FileSet, file *ast.File) er
 }
 
 func checkFunctionBody(path string, fileSet *token.FileSet, file *ast.File, function *ast.FuncDecl) error {
-	requestAliases := map[string]bool{"request": true}
+	requestAliases := make(map[string]bool)
+
+	if function.Type.Params != nil {
+		for _, field := range function.Type.Params.List {
+			if !isCallerOpenRequestType(file, field.Type) {
+				continue
+			}
+
+			for _, name := range field.Names {
+				requestAliases[identifierKey(name)] = true
+			}
+		}
+	}
+
 	collectRequestAliases(function.Body, requestAliases)
 
 	aliases := make(map[string]bool)
@@ -239,6 +336,30 @@ func checkFunctionBody(path string, fileSet *token.FileSet, file *ast.File, func
 	return violation
 }
 
+func isCallerOpenRequestType(file *ast.File, expression ast.Expr) bool {
+	expression = unparen(expression)
+	if selector, ok := expression.(*ast.SelectorExpr); ok {
+		return selector.Sel.Name == "SetLightStateRequest" &&
+			importedPath(file, selector.X) == "github.com/portpowered/go-tplink/pkg/tplinkmodels"
+	}
+
+	identifier, ok := expression.(*ast.Ident)
+
+	return ok && identifier.Name == "SetLightStateRequest"
+}
+
+func identifierKey(identifier *ast.Ident) string {
+	if identifier == nil {
+		return ""
+	}
+
+	if identifier.Obj != nil {
+		return fmt.Sprintf("%p", identifier.Obj)
+	}
+
+	return identifier.Name
+}
+
 func callerOpenViolation(
 	path string,
 	fileSet *token.FileSet,
@@ -251,6 +372,12 @@ func callerOpenViolation(
 		return callOpenInputViolation(path, fileSet, typed, aliases, requestAliases)
 	case *ast.AssignStmt:
 		return assignmentOpenInputViolation(path, fileSet, function, typed, aliases, requestAliases, stateVariables)
+	case *ast.IncDecStmt:
+		if isOpenMapIndex(typed.X, aliases, requestAliases) {
+			return sourceError(fileSet, path, typed.Pos(), callerStateMutationMessage)
+		}
+
+		return nil
 	case *ast.ReturnStmt:
 		return resultOpenInputViolation(path, fileSet, typed.Results, aliases, requestAliases)
 	case *ast.CompositeLit:
@@ -310,7 +437,7 @@ func assignmentOpenInputViolation(
 			continue
 		}
 
-		if _, isAlias := unparen(target).(*ast.Ident); isAlias {
+		if identifier, isAlias := unparen(target).(*ast.Ident); isAlias && isLocalIdentifier(function, identifier) {
 			continue
 		}
 
@@ -325,6 +452,13 @@ func assignmentOpenInputViolation(
 	}
 
 	return nil
+}
+
+func isLocalIdentifier(function *ast.FuncDecl, identifier *ast.Ident) bool {
+	return function != nil &&
+		identifier.Obj != nil &&
+		identifier.Obj.Pos() >= function.Pos() &&
+		identifier.Obj.Pos() <= function.End()
 }
 
 func assignmentCarriesOpenInput(index int, values []ast.Expr, aliases, requestAliases map[string]bool) bool {
@@ -433,6 +567,8 @@ func collectGeneratedUses(file *ast.File, uses map[string]bool) {
 }
 
 func checkRawWireStrings(path string, fileSet *token.FileSet, file *ast.File, wireValues map[string]bool) error {
+	localCommandLiterals := localCLICommandLiterals(file)
+
 	for value := range wireValues {
 		var violation error
 
@@ -444,7 +580,7 @@ func checkRawWireStrings(path string, fileSet *token.FileSet, file *ast.File, wi
 
 			decoded, err := strconv.Unquote(literal.Value)
 
-			if err == nil && decoded == value {
+			if err == nil && decoded == value && !localCommandLiterals[literal.Pos()] {
 				violation = sourceError(fileSet, path, literal.Pos(), rawWireStringMessage)
 
 				return false
@@ -459,6 +595,86 @@ func checkRawWireStrings(path string, fileSet *token.FileSet, file *ast.File, wi
 	}
 
 	return nil
+}
+
+func localCLICommandLiterals(file *ast.File) map[token.Pos]bool {
+	allowedNames := map[string]bool{
+		"operationState": true, "operationOn": true, "operationOff": true,
+		"operationReboot": true, "operationBrightness": true,
+		"operationColorTemp": true, "operationColor": true,
+	}
+
+	allowed := make(map[token.Pos]bool)
+
+	if file.Name.Name != "main" {
+		return allowed
+	}
+
+	markCLICommandErrors(file, allowed)
+	markCLICommandConstants(file, allowed, allowedNames)
+
+	return allowed
+}
+
+func markCLICommandErrors(file *ast.File, allowed map[token.Pos]bool) {
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch typed := node.(type) {
+		case *ast.CaseClause:
+			for _, expression := range typed.List {
+				if isCLICommandLiteral(expression, "login") {
+					allowed[expression.Pos()] = true
+				}
+			}
+		case *ast.CallExpr:
+			function, ok := unparen(typed.Fun).(*ast.Ident)
+			if ok && function.Name == "safeOperationError" && len(typed.Args) > 0 &&
+				isCLICommandLiteral(typed.Args[0], "login") {
+				allowed[typed.Args[0].Pos()] = true
+			}
+		}
+
+		return true
+	})
+}
+
+func markCLICommandConstants(file *ast.File, allowed map[token.Pos]bool, allowedNames map[string]bool) {
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.CONST {
+			continue
+		}
+
+		for _, rawSpec := range general.Specs {
+			spec, ok := rawSpec.(*ast.ValueSpec)
+			if ok {
+				markCLICommandValueSpec(spec, allowed, allowedNames)
+			}
+		}
+	}
+}
+
+func markCLICommandValueSpec(spec *ast.ValueSpec, allowed map[token.Pos]bool, allowedNames map[string]bool) {
+	for index, name := range spec.Names {
+		if !allowedNames[name.Name] || index >= len(spec.Values) {
+			continue
+		}
+
+		literal, ok := unparen(spec.Values[index]).(*ast.BasicLit)
+		if ok && literal.Kind == token.STRING {
+			allowed[literal.Pos()] = true
+		}
+	}
+}
+
+func isCLICommandLiteral(expression ast.Expr, expected string) bool {
+	literal, ok := unparen(expression).(*ast.BasicLit)
+	if !ok || literal.Kind != token.STRING {
+		return false
+	}
+
+	value, err := strconv.Unquote(literal.Value)
+
+	return err == nil && value == expected
 }
 
 func collectRequestAliases(body *ast.BlockStmt, aliases map[string]bool) {
@@ -488,26 +704,47 @@ func collectRequestAliasesFromNode(node ast.Node, aliases map[string]bool) {
 
 func collectRequestAliasesFromIdentifiers(names []*ast.Ident, values []ast.Expr, aliases map[string]bool) {
 	for index, source := range values {
-		identifier, isIdentifier := unparen(source).(*ast.Ident)
-		if !isIdentifier || !aliases[identifier.Name] || index >= len(names) {
+		if index >= len(names) || !isRequestSource(source, aliases) {
 			continue
 		}
 
-		aliases[names[index].Name] = true
+		aliases[identifierKey(names[index])] = true
 	}
 }
 
 func collectRequestAliasesFromValues(names []ast.Expr, values []ast.Expr, aliases map[string]bool) {
 	for index, source := range values {
-		identifier, isIdentifier := unparen(source).(*ast.Ident)
-		if !isIdentifier || !aliases[identifier.Name] || index >= len(names) {
+		if index >= len(names) || !isRequestSource(source, aliases) {
 			continue
 		}
 
 		target, isTarget := unparen(names[index]).(*ast.Ident)
 		if isTarget {
-			aliases[target.Name] = true
+			aliases[identifierKey(target)] = true
 		}
+	}
+}
+
+func isRequestSource(expression ast.Expr, aliases map[string]bool) bool {
+	expression = unparen(expression)
+	switch typed := expression.(type) {
+	case *ast.Ident:
+		return aliases[identifierKey(typed)]
+	case *ast.StarExpr, *ast.UnaryExpr:
+		return isRequestSource(expressionOperand(typed), aliases)
+	}
+
+	return false
+}
+
+func expressionOperand(expression ast.Expr) ast.Expr {
+	switch typed := expression.(type) {
+	case *ast.StarExpr:
+		return typed.X
+	case *ast.UnaryExpr:
+		return typed.X
+	default:
+		return expression
 	}
 }
 
@@ -519,7 +756,7 @@ func generatedLightStateVariables(body *ast.BlockStmt, file *ast.File) map[strin
 		case *ast.ValueSpec:
 			if isGeneratedLightStateType(file, typed.Type) {
 				for _, name := range typed.Names {
-					variables[name.Name] = true
+					variables[identifierKey(name)] = true
 				}
 			}
 		case *ast.AssignStmt:
@@ -529,7 +766,7 @@ func generatedLightStateVariables(body *ast.BlockStmt, file *ast.File) map[strin
 				}
 
 				if name, ok := unparen(typed.Lhs[index]).(*ast.Ident); ok {
-					variables[name.Name] = true
+					variables[identifierKey(name)] = true
 				}
 			}
 		}
@@ -552,7 +789,7 @@ func isGeneratedLightStateSink(function *ast.FuncDecl, target ast.Expr, variable
 
 	base, isIdentifier := unparen(selector.X).(*ast.Ident)
 
-	return isIdentifier && variables[base.Name]
+	return isIdentifier && variables[identifierKey(base)]
 }
 
 func isGeneratedLightStateType(file *ast.File, expression ast.Expr) bool {
@@ -599,7 +836,7 @@ func collectOpenMapAliasesFromIdentifiers(
 ) {
 	for index, source := range values {
 		if index < len(names) && isOpenMapSource(source, aliases, requestAliases) {
-			aliases[names[index].Name] = true
+			aliases[identifierKey(names[index])] = true
 		}
 	}
 }
@@ -611,7 +848,7 @@ func collectOpenMapAliasesFromValues(names []ast.Expr, values []ast.Expr, aliase
 		}
 
 		if identifier, ok := unparen(names[index]).(*ast.Ident); ok {
-			aliases[identifier.Name] = true
+			aliases[identifierKey(identifier)] = true
 		}
 	}
 }
@@ -620,10 +857,10 @@ func isOpenMapSource(expression ast.Expr, aliases, requestAliases map[string]boo
 	expression = unparen(expression)
 	switch typed := expression.(type) {
 	case *ast.Ident:
-		return aliases[typed.Name]
+		return aliases[identifierKey(typed)]
 	case *ast.SelectorExpr:
 		return typed.Sel.Name == "State" && isRequestIdentifier(unparen(typed.X), requestAliases)
-	case *ast.IndexExpr, *ast.IndexListExpr, *ast.TypeAssertExpr, *ast.StarExpr:
+	case *ast.IndexExpr, *ast.IndexListExpr, *ast.TypeAssertExpr, *ast.StarExpr, *ast.UnaryExpr:
 		return isOpenMapOperand(typed, aliases, requestAliases)
 	case *ast.CallExpr:
 		return isOpenMapCall(typed, aliases, requestAliases)
@@ -641,6 +878,8 @@ func isOpenMapOperand(expression ast.Expr, aliases, requestAliases map[string]bo
 	case *ast.TypeAssertExpr:
 		return isOpenMapSource(typed.X, aliases, requestAliases)
 	case *ast.StarExpr:
+		return isOpenMapSource(typed.X, aliases, requestAliases)
+	case *ast.UnaryExpr:
 		return isOpenMapSource(typed.X, aliases, requestAliases)
 	default:
 		return false
@@ -662,7 +901,7 @@ func isOpenMapCall(call *ast.CallExpr, aliases, requestAliases map[string]bool) 
 func isRequestIdentifier(expression ast.Expr, requestAliases map[string]bool) bool {
 	identifier, ok := expression.(*ast.Ident)
 
-	return ok && requestAliases[identifier.Name]
+	return ok && requestAliases[identifierKey(identifier)]
 }
 
 func isOpenMapIndex(expression ast.Expr, aliases, requestAliases map[string]bool) bool {
@@ -690,7 +929,7 @@ func isMapBuiltinConstruction(call *ast.CallExpr, generatedMaps map[string]bool)
 	function := unparen(call.Fun)
 
 	identifier, ok := function.(*ast.Ident)
-	if !ok || (identifier.Name != "make" && identifier.Name != "new") || len(call.Args) == 0 {
+	if !ok || (identifier.Name != urlValuesMakeFunctionName && identifier.Name != "new") || len(call.Args) == 0 {
 		return false
 	}
 
@@ -703,7 +942,7 @@ func isMapConversion(call *ast.CallExpr, generatedMaps map[string]bool) bool {
 
 func isMapMutationCall(call *ast.CallExpr, aliases, requestAliases map[string]bool) bool {
 	function, ok := unparen(call.Fun).(*ast.Ident)
-	if !ok || (function.Name != "delete" && function.Name != "clear") || len(call.Args) == 0 {
+	if !ok || (function.Name != deleteName && function.Name != "clear") || len(call.Args) == 0 {
 		return false
 	}
 
@@ -729,18 +968,22 @@ func importedPackageName(file *ast.File, expression ast.Expr, packageName string
 
 	for _, importSpec := range file.Imports {
 		path, err := strconv.Unquote(importSpec.Path.Value)
-		if err != nil || path != "github.com/portpowered/go-tplink/pkg/dependencymodels" {
+		if err != nil || path != dependencymodelsImportPath {
 			continue
 		}
 
 		if importSpec.Name == nil {
-			return packageName == "dependencymodels"
+			return packageName == "dependencymodels" && packageQualifierIsUnshadowed(file, identifier)
 		}
 
-		return importSpec.Name.Name == identifier.Name
+		return importSpec.Name.Name == identifier.Name && packageQualifierIsUnshadowed(file, identifier)
 	}
 
 	return false
+}
+
+func packageQualifierIsUnshadowed(file *ast.File, identifier *ast.Ident) bool {
+	return identifier.Obj == nil || file.Scope.Lookup(identifier.Name) == identifier.Obj
 }
 
 func readGeneratedStringValues(path string) (map[string]bool, error) {

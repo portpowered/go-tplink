@@ -38,15 +38,6 @@ func (err operationError) Error() string {
 	return err.operation + ": " + err.message
 }
 
-type loginCredentials struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-type storedCredentials struct {
-	AccessToken string `json:"accessToken"`
-}
-
 type credentialStore struct {
 	path string
 }
@@ -57,7 +48,7 @@ func readLoginCredentials(
 	deps dependencies,
 	inputReader io.Reader,
 	out io.Writer,
-) (loginCredentials, error) {
+) (LoginCredentials, error) {
 	if stdinInput {
 		return decodeLoginCredentials(inputReader)
 	}
@@ -72,46 +63,46 @@ func readLoginCredentials(
 
 	if email != "" || password != "" {
 		if email == "" || password == "" {
-			return loginCredentials{}, commandError("set both TPLINK_EMAIL and TPLINK_PASSWORD")
+			return LoginCredentials{}, commandError("set both TPLINK_EMAIL and TPLINK_PASSWORD")
 		}
 
-		return loginCredentials{Email: email, Password: password}, nil
+		return LoginCredentials{Email: email, Password: password}, nil
 	}
 
 	if deps.isTerminal(inputReader) {
 		return promptLoginCredentials(inputReader, out)
 	}
 
-	return loginCredentials{}, commandError("provide TPLINK_EMAIL and TPLINK_PASSWORD, --stdin, or --credentials-file")
+	return LoginCredentials{}, commandError("provide TPLINK_EMAIL and TPLINK_PASSWORD, --stdin, or --credentials-file")
 }
 
-func decodeLoginCredentials(input io.Reader) (loginCredentials, error) {
+func decodeLoginCredentials(input io.Reader) (LoginCredentials, error) {
 	decoder := json.NewDecoder(io.LimitReader(input, maxCredentialJSONBytes))
 	decoder.DisallowUnknownFields()
 
-	var credentials loginCredentials
+	var credentials LoginCredentials
 
 	err := decoder.Decode(&credentials)
 	if err != nil {
-		return loginCredentials{}, commandError("stdin credentials must be a JSON object with email and password")
+		return LoginCredentials{}, commandError("stdin credentials must be a JSON object with email and password")
 	}
 
 	var trailing any
 
 	err = decoder.Decode(&trailing)
 	if !errors.Is(err, io.EOF) {
-		return loginCredentials{}, commandError("stdin credentials must contain one JSON object")
+		return LoginCredentials{}, commandError("stdin credentials must contain one JSON object")
 	}
 
 	return credentials, nil
 }
 
-func readLoginCredentialsFile(path string) (loginCredentials, error) {
+func readLoginCredentialsFile(path string) (LoginCredentials, error) {
 	// This explicit path is supplied by the caller as a local credentials file.
 	//nolint:gosec // The CLI intentionally reads user-selected credential files.
 	file, err := os.Open(path)
 	if err != nil {
-		return loginCredentials{}, fmt.Errorf("open credentials file: %w", err)
+		return LoginCredentials{}, fmt.Errorf("open credentials file: %w", err)
 	}
 
 	defer func() { _ = file.Close() }()
@@ -119,11 +110,11 @@ func readLoginCredentialsFile(path string) (loginCredentials, error) {
 	return decodeLoginCredentials(file)
 }
 
-func promptLoginCredentials(inputReader io.Reader, out io.Writer) (loginCredentials, error) {
+func promptLoginCredentials(inputReader io.Reader, out io.Writer) (LoginCredentials, error) {
 	file, isFile := inputReader.(*os.File)
 
 	if !isFile || !term.IsTerminal(int(file.Fd())) {
-		return loginCredentials{}, commandError("interactive credentials require a terminal")
+		return LoginCredentials{}, commandError("interactive credentials require a terminal")
 	}
 
 	reader := bufio.NewReader(inputReader)
@@ -132,7 +123,7 @@ func promptLoginCredentials(inputReader io.Reader, out io.Writer) (loginCredenti
 	email, err := reader.ReadString('\n')
 
 	if err != nil && !errors.Is(err, io.EOF) {
-		return loginCredentials{}, fmt.Errorf("read email: %w", err)
+		return LoginCredentials{}, fmt.Errorf("read email: %w", err)
 	}
 
 	_, _ = fmt.Fprint(out, "Password: ")
@@ -142,14 +133,14 @@ func promptLoginCredentials(inputReader io.Reader, out io.Writer) (loginCredenti
 	_, _ = fmt.Fprintln(out)
 
 	if err != nil {
-		return loginCredentials{}, fmt.Errorf("read password: %w", err)
+		return LoginCredentials{}, fmt.Errorf("read password: %w", err)
 	}
 
-	return loginCredentials{Email: strings.TrimSpace(email), Password: string(passwordBytes)}, nil
+	return LoginCredentials{Email: strings.TrimSpace(email), Password: string(passwordBytes)}, nil
 }
 
-func (store credentialStore) load() (storedCredentials, error) {
-	var credentials storedCredentials
+func (store credentialStore) load() (StoredCredentials, error) {
+	var credentials StoredCredentials
 
 	file, err := os.Open(store.path)
 	if err != nil {
@@ -167,20 +158,20 @@ func (store credentialStore) load() (storedCredentials, error) {
 
 	err = decoder.Decode(&credentials)
 	if err != nil || credentials.AccessToken == "" {
-		return storedCredentials{}, commandError("saved credentials file is invalid; run go-tplink auth login")
+		return StoredCredentials{}, commandError("saved credentials file is invalid; run go-tplink auth login")
 	}
 
 	var trailing any
 
 	err = decoder.Decode(&trailing)
 	if !errors.Is(err, io.EOF) {
-		return storedCredentials{}, commandError("saved credentials file has trailing data")
+		return StoredCredentials{}, commandError("saved credentials file has trailing data")
 	}
 
 	return credentials, nil
 }
 
-func (store credentialStore) save(credentials storedCredentials) error {
+func (store credentialStore) save(credentials StoredCredentials) error {
 	if credentials.AccessToken == "" {
 		return commandError("cannot save an empty session token")
 	}
@@ -269,7 +260,7 @@ func (store credentialStore) remove() error {
 	return nil
 }
 
-func writeProtectedExport(path string, credentials storedCredentials) error {
+func writeProtectedExport(path string, credentials StoredCredentials) error {
 	//nolint:gosec // Explicit export is requested by the caller and the file is created mode 0600.
 	data, err := json.MarshalIndent(credentials, "", "  ")
 	if err != nil {

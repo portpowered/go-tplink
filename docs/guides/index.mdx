@@ -21,9 +21,13 @@ decoded inner shapes.
 | Use the standalone terminal command | `go-tplink` | [Terminal CLI](/docs/guides/cli) |
 | Handle cloud, device, or transport failures | Any operation | [Errors and token handling](/docs/guides/errors) |
 
+The generated [cloud request API reference](/docs/openapi/cloud-request/sendCloudRequest)
+documents the shared HTTP operation and envelope.
+
 ## Evidence
 
-The payloads describe shapes assembled and decoded by this client. Checked-in
-replay fixtures are **synthetic**: their source cannot be verified, and they
-are not live TP-Link captures. This is not a vendor-issued protocol
-specification. Device behavior can vary by model, region, account, and firmware.
+**Implementation-derived contract:** the payloads describe shapes assembled
+and decoded by this client and its synthetic offline replay fixtures. The
+fixtures are not live TP-Link captures, and the contract is not vendor-issued
+or verified against live captures. Device behavior can vary by model, region,
+account, and firmware.

@@ -488,28 +488,23 @@ func TestReplayFixtureRejectsRequestOutsidePair(t *testing.T) {
 	transport := newReplayTransport()
 	transport.expectSequence(replayDeviceListMethod)
 
-	request := func(origin, token string) *http.Request {
-		req := newReplayTestRequest(
-			t, http.MethodPost, origin+"?token="+token,
-			strings.NewReader(`{"method":"getDeviceList"}`),
-		)
-		req.Header.Set("Content-Type", "application/json")
-
-		return req
-	}
-
 	for _, bad := range []*http.Request{
-		request("https://wrong.example.invalid", replayTestToken),
-		request(replayBaseURL, ""),
-		request(replayBaseURL, "wrong-token"),
+		newReplayTokenRequest(t, "https://wrong.example.invalid", replayTestToken),
+		newReplayTokenRequest(t, replayBaseURL+"/unexpected", replayTestToken),
+		newReplayTokenRequest(t, replayBaseURL, ""),
+		newReplayTokenRequest(t, replayBaseURL, "wrong-token"),
 	} {
 		assertReplayRoundTripRejected(t, transport, bad, "mismatched request")
 	}
 
+	extraHeader := newReplayTokenRequest(t, replayBaseURL, replayTestToken)
+	extraHeader.Header.Set("X-Unexpected", "value")
+	assertReplayRoundTripRejected(t, transport, extraHeader, "unexpected request header")
+
 	unexpectedBody := newReplayTestRequest(
 		t,
 		http.MethodPost,
-		replayBaseURL+"?token=test-token",
+		replayBaseURL+"/?token=test-token",
 		strings.NewReader(`{"method":"getDeviceList","unexpected":true}`),
 	)
 
@@ -517,7 +512,7 @@ func TestReplayFixtureRejectsRequestOutsidePair(t *testing.T) {
 
 	assertReplayRoundTripRejected(t, transport, unexpectedBody, "mismatched body")
 
-	response, err := transport.RoundTrip(request(replayBaseURL, replayTestToken))
+	response, err := transport.RoundTrip(newReplayTokenRequest(t, replayBaseURL, replayTestToken))
 	if err != nil {
 		closeReplayResponseBody(t, response)
 		t.Fatal(err)
@@ -539,7 +534,24 @@ func TestReplayFixtureRejectsRequestOutsidePair(t *testing.T) {
 		t.Fatal(assertionErr)
 	}
 
-	assertReplayRoundTripRejected(t, transport, request(replayBaseURL, replayTestToken), "duplicate request")
+	assertReplayRoundTripRejected(
+		t,
+		transport,
+		newReplayTokenRequest(t, replayBaseURL, replayTestToken),
+		"duplicate request",
+	)
+}
+
+func newReplayTokenRequest(t *testing.T, origin, token string) *http.Request {
+	t.Helper()
+
+	request := newReplayTestRequest(
+		t, http.MethodPost, origin+"/?token="+token,
+		strings.NewReader(`{"method":"getDeviceList"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+
+	return request
 }
 
 func assertReplayRoundTripRejected(t *testing.T, transport *replayTransport, request *http.Request, message string) {
@@ -567,7 +579,7 @@ func TestReplayFixtureRequiresExpectedCallOrderAndExhaustion(t *testing.T) {
 	request := newReplayTestRequest(
 		t,
 		http.MethodPost,
-		replayBaseURL+"?token=test-token",
+		replayBaseURL+"/?token=test-token",
 		strings.NewReader(`{"method":"getDeviceList"}`),
 	)
 

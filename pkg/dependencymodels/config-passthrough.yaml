@@ -1,0 +1,8 @@
+package: dependencymodels
+generate:
+  models: true
+output: pkg/dependencymodels/passthrough.gen.go
+output-options:
+  skip-prune: true
+import-mapping:
+  ./cloud-envelope.openapi.yaml: "-"

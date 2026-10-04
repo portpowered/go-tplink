@@ -156,4 +156,4 @@ jobs:
       - name: Regenerate API models
         run: make generate-api
       - name: Check generated models
-        run: git diff --exit-code -- pkg/dependencymodels pkg/generatedwire pkg/tplink/constants.gen.go pkg/tplinkmodels
+        run: git diff --exit-code -- pkg/dependencymodels pkg/generatedwire pkg/tplink/constants.gen.go pkg/tplinkmodels cmd/go-tplink/models.gen.go

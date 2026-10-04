@@ -211,7 +211,7 @@ func dependenciesForTransport(
 func saveTestToken(t *testing.T, path string) {
 	t.Helper()
 
-	err := (credentialStore{path: path}).save(storedCredentials{AccessToken: testToken})
+	err := (credentialStore{path: path}).save(StoredCredentials{AccessToken: testToken})
 	if err != nil {
 		t.Fatalf("save test token: %v", err)
 	}

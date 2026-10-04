@@ -91,12 +91,12 @@ func newRequest(ctx context.Context, baseURL *url.URL, cloudRequest any, token *
 
 func requestURL(baseURL *url.URL, token *string) *url.URL {
 	result := *baseURL
-	if result.Path == "" && len(dependencymodels.CloudRequestPath) > 1 {
+	if result.Path == "" {
 		result.Path = dependencymodels.CloudRequestPath
 	}
 
 	if token != nil {
-		query := result.Query()
+		query := make(url.Values)
 		query.Set(dependencymodels.TokenQueryKey, *token)
 		result.RawQuery = query.Encode()
 	}

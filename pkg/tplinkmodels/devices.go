@@ -33,12 +33,23 @@ func DetectCapabilities(device Device) Capabilities {
 			caps.Brightness = true
 		}
 	case EndpointTypeBulb:
-		caps.Brightness = device.IsDimmable == dependencymodels.DeviceCapabilityEnabled
-		caps.Color = device.IsColor == dependencymodels.DeviceCapabilityEnabled
-		caps.ColorTemp = device.IsVariableColor == dependencymodels.DeviceCapabilityEnabled
+		caps.Brightness = capabilityEnabled(device.IsDimmable)
+		caps.Color = capabilityEnabled(device.IsColor)
+		caps.ColorTemp = capabilityEnabled(device.IsVariableColor)
 	case EndpointTypeOther:
 		return caps
 	}
 
 	return caps
+}
+
+func capabilityEnabled(value int) bool {
+	switch value {
+	case dependencymodels.DeviceCapabilityEnabled:
+		return true
+	case dependencymodels.DeviceCapabilityDisabled:
+		return false
+	default:
+		return false
+	}
 }

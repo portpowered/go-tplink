@@ -38,8 +38,11 @@ paths:
       summary: Dispatch a cloud method
       description: >-
         All implemented cloud methods use this POST route. The method field
-        selects login, device enumeration, or passthrough. See the Guides in
-        the sidebar for each client operation, its inputs, and decoded payloads.
+        selects login, device enumeration, or passthrough. This contract is
+        implementation-derived from the current client and synthetic offline
+        replay fixtures; it is not vendor-issued or verified against live
+        captures. See the Guides in the sidebar for client operations, inputs,
+        and decoded payloads.
       parameters:
         - name: token
           in: query
@@ -218,602 +221,64 @@ paths:
 components:
   schemas:
     CloudRequest:
-      description: Discriminated request envelope for the single POST endpoint.
-      oneOf:
-        - $ref: '#/components/schemas/LoginCloudRequest'
-        - $ref: '#/components/schemas/GetDeviceListCloudRequest'
-        - $ref: '#/components/schemas/PassthroughCloudRequest'
-      discriminator:
-        propertyName: method
-        mapping:
-          login: '#/components/schemas/LoginCloudRequest'
-          getDeviceList: '#/components/schemas/GetDeviceListCloudRequest'
-          passthrough: '#/components/schemas/PassthroughCloudRequest'
+      $ref: './cloud-envelope.openapi.yaml#/components/schemas/CloudRequest'
     LoginCloudRequest:
-      type: object
-      additionalProperties: false
-      required:
-        - method
-        - params
-      properties:
-        method:
-          type: string
-          enum:
-            - login
-          x-go-compat-constant-names:
-            - value: login
-              name: MethodLogin
-        params:
-          $ref: '#/components/schemas/LoginParams'
+      $ref: './authentication.openapi.yaml#/components/schemas/LoginCloudRequest'
     GetDeviceListCloudRequest:
-      type: object
-      additionalProperties: false
-      required:
-        - method
-      properties:
-        method:
-          type: string
-          enum:
-            - getDeviceList
-          x-go-compat-constant-names:
-            - value: getDeviceList
-              name: MethodGetDeviceList
-      description: The implemented client sends no params for this method.
+      $ref: './devices.openapi.yaml#/components/schemas/GetDeviceListCloudRequest'
     PassthroughCloudRequest:
-      type: object
-      additionalProperties: false
-      required:
-        - method
-        - params
-      properties:
-        method:
-          type: string
-          enum:
-            - passthrough
-          x-go-compat-constant-names:
-            - value: passthrough
-              name: MethodPassthrough
-        params:
-          $ref: '#/components/schemas/PassthroughParams'
+      $ref: './passthrough.openapi.yaml#/components/schemas/PassthroughCloudRequest'
     LoginParams:
-      type: object
-      additionalProperties: false
-      required:
-        - appType
-        - cloudUserName
-        - cloudPassword
-        - terminalUUID
-      properties:
-        appType:
-          type: string
-          enum:
-            - Tapo_Android
-          x-go-compat-constant-name: AppType
-          x-go-wire-constant-value: true
-          description: Fixed appType value sent by this client.
-        cloudUserName:
-          type: string
-          description: Account email supplied to Login.
-        cloudPassword:
-          type: string
-          writeOnly: true
-          description: Account password supplied to Login.
-        terminalUUID:
-          type: string
-          enum:
-            - go-tplink-client
-          x-go-wire-constant-name: TerminalUUID
-          x-go-wire-constant-value: true
-          description: Fixed terminalUUID value sent by this client.
+      $ref: './authentication.openapi.yaml#/components/schemas/LoginParams'
     PassthroughParams:
-      type: object
-      additionalProperties: false
-      required:
-        - deviceId
-        - requestData
-      properties:
-        deviceId:
-          type: string
-          description: Device identifier from the device-list result.
-        requestData:
-          type: string
-          x-go-type: string
-          contentMediaType: application/json
-          contentSchema:
-            $ref: '#/components/schemas/PassthroughCommand'
-          description: |
-            JSON-encoded string containing one command object. Decode the string
-            to see the PassthroughCommand schema; do not send that object in
-            place of the string. The Guides list the fields for each command.
-          example: '{"system":{"set_relay_state":{"state":1}}}'
+      $ref: './passthrough.openapi.yaml#/components/schemas/PassthroughParams'
     PassthroughCommand:
-      description: |
-        Inner JSON value after decoding params.requestData. The client sends one command under one namespace per request.
-      oneOf:
-        - $ref: '#/components/schemas/SystemGetSysInfoCommand'
-        - $ref: '#/components/schemas/SystemSetRelayStateCommand'
-        - $ref: '#/components/schemas/SystemRebootCommand'
-        - $ref: '#/components/schemas/SystemSetDevAliasCommand'
-        - $ref: '#/components/schemas/LightingGetLightStateCommand'
-        - $ref: '#/components/schemas/LightingTransitionLightStateCommand'
+      $ref: './passthrough.openapi.yaml#/components/schemas/PassthroughCommand'
     SystemGetSysInfoCommand:
-      type: object
-      additionalProperties: false
-      required:
-        - system
-      properties:
-        system:
-          x-go-compat-constant-name: NamespaceSystem
-          type: object
-          additionalProperties: false
-          required:
-            - get_sysinfo
-          properties:
-            get_sysinfo:
-              x-go-compat-constant-name: CmdGetSysInfo
-              type: string
-              enum:
-                - ''
-              description: Empty string for the read command.
+      $ref: './passthrough.openapi.yaml#/components/schemas/SystemGetSysInfoCommand'
     SystemSetRelayStateCommand:
-      type: object
-      additionalProperties: false
-      required:
-        - system
-      properties:
-        system:
-          x-go-compat-constant-name: NamespaceSystem
-          type: object
-          additionalProperties: false
-          required:
-            - set_relay_state
-          properties:
-            set_relay_state:
-              x-go-compat-constant-name: CmdSetRelayState
-              type: object
-              additionalProperties: false
-              required:
-                - state
-              properties:
-                state:
-                  type: integer
-                  enum:
-                    - 0
-                    - 1
-                  description: 1 turns the relay on; 0 turns it off.
+      $ref: './passthrough.openapi.yaml#/components/schemas/SystemSetRelayStateCommand'
     SystemRebootCommand:
-      type: object
-      additionalProperties: false
-      required:
-        - system
-      properties:
-        system:
-          x-go-compat-constant-name: NamespaceSystem
-          type: object
-          additionalProperties: false
-          required:
-            - reboot
-          properties:
-            reboot:
-              x-go-compat-constant-name: CmdReboot
-              type: object
-              additionalProperties: false
-              required:
-                - delay
-              properties:
-                delay:
-                  type: integer
-                  enum:
-                    - 1
-                  description: The implemented client sends a one-second delay.
+      $ref: './passthrough.openapi.yaml#/components/schemas/SystemRebootCommand'
     SystemSetDevAliasCommand:
-      type: object
-      additionalProperties: false
-      required:
-        - system
-      properties:
-        system:
-          x-go-compat-constant-name: NamespaceSystem
-          type: object
-          additionalProperties: false
-          required:
-            - set_dev_alias
-          properties:
-            set_dev_alias:
-              x-go-compat-constant-name: CmdSetDevAlias
-              type: object
-              additionalProperties: false
-              required:
-                - alias
-              properties:
-                alias:
-                  type: string
+      $ref: './passthrough.openapi.yaml#/components/schemas/SystemSetDevAliasCommand'
     LightingGetLightStateCommand:
-      type: object
-      additionalProperties: false
-      required:
-        - smartlife.iot.smartbulb.lightingservice
-      properties:
-        smartlife.iot.smartbulb.lightingservice:
-          x-go-compat-constant-name: NamespaceLightingService
-          type: object
-          additionalProperties: false
-          required:
-            - get_light_state
-          properties:
-            get_light_state:
-              x-go-compat-constant-name: CmdGetLightState
-              type: string
-              enum:
-                - ''
-              description: Empty string for the read command.
+      $ref: './passthrough.openapi.yaml#/components/schemas/LightingGetLightStateCommand'
     LightingTransitionLightStateCommand:
-      type: object
-      additionalProperties: false
-      required:
-        - smartlife.iot.smartbulb.lightingservice
-      properties:
-        smartlife.iot.smartbulb.lightingservice:
-          x-go-compat-constant-name: NamespaceLightingService
-          type: object
-          additionalProperties: false
-          required:
-            - transition_light_state
-          properties:
-            transition_light_state:
-              x-go-compat-constant-name: CmdTransitionLightState
-              $ref: '#/components/schemas/LightTransitionState'
-              x-go-type: '*LightTransitionState'
-              nullable: true
+      $ref: './passthrough.openapi.yaml#/components/schemas/LightingTransitionLightStateCommand'
     LightTransitionState:
-      type: object
-      description: >-
-        State values accepted by SetLightState. Other properties may be sent by
-        the generic method; device support depends on its capabilities.
-      properties:
-        on_off:
-          type: integer
-          enum:
-            - 0
-            - 1
-          description: 1 turns the bulb on; 0 turns it off.
-        brightness:
-          type: integer
-          minimum: 0
-          maximum: 100
-          description: Brightness from 0 through 100.
-        color_temp:
-          type: integer
-          description: Color temperature in Kelvin; supported values depend on the device.
-        hue:
-          type: integer
-          minimum: 0
-          maximum: 360
-          description: Hue from 0 through 360 degrees.
-        saturation:
-          type: integer
-          minimum: 0
-          maximum: 100
-          description: Saturation from 0 through 100.
-      additionalProperties: true
+      $ref: './passthrough.openapi.yaml#/components/schemas/LightTransitionState'
     CloudResponseEnvelope:
-      description: |
-        Expected result or cloud-error shape. Responses have no method discriminator, and response models are permissive because the client unmarshals into zero-valued Go fields; the request method identifies the expected result.
-      anyOf:
-        - $ref: '#/components/schemas/LoginResponse'
-        - $ref: '#/components/schemas/DeviceListResponse'
-        - $ref: '#/components/schemas/PassthroughResponse'
-        - $ref: '#/components/schemas/CloudErrorResponse'
+      $ref: './cloud-envelope.openapi.yaml#/components/schemas/CloudResponseEnvelope'
     CloudResponse:
-      type: object
-      properties:
-        error_code:
-          type: integer
-          description: >-
-            Zero indicates success. Known cloud failures include -20004 (rate
-            limit), -20651 (expired token), -20104 (parameter error), and
-            -20601 (authentication error). Other non-zero codes may occur.
-          x-extensible-enum:
-            - 0
-            - -20004
-            - -20651
-            - -20104
-            - -20601
-          x-go-wire-constant-names:
-            - value: 0
-              name: CloudErrorCodeOK
-            - value: -20004
-              name: CloudErrorCodeRateLimited
-            - value: -20651
-              name: CloudErrorCodeTokenExpired
-            - value: -20104
-              name: CloudErrorCodeParameter
-            - value: -20601
-              name: CloudErrorCodeAuthentication
-        msg:
-          type: string
-          description: Optional cloud error message.
+      $ref: './cloud-envelope.openapi.yaml#/components/schemas/CloudResponse'
     CloudErrorResponse:
-      type: object
-      required:
-        - error_code
-      properties:
-        error_code:
-          type: integer
-          not:
-            enum:
-              - 0
-          description: Non-zero cloud error code. The implementation maps several known codes and preserves other non-zero codes as generic errors.
-        msg:
-          type: string
-          description: Optional cloud error message.
+      $ref: './cloud-envelope.openapi.yaml#/components/schemas/CloudErrorResponse'
     LoginResponse:
-      allOf:
-        - $ref: '#/components/schemas/CloudResponse'
-        - type: object
-          properties:
-            result:
-              $ref: '#/components/schemas/LoginResult'
+      $ref: './authentication.openapi.yaml#/components/schemas/LoginResponse'
     LoginResult:
-      type: object
-      properties:
-        accountId:
-          type: string
-        token:
-          type: string
-          description: Opaque session token for subsequent authenticated requests.
-        email:
-          type: string
-        regTime:
-          type: string
-        countryCode:
-          type: string
+      $ref: './authentication.openapi.yaml#/components/schemas/LoginResult'
     DeviceListResponse:
-      allOf:
-        - $ref: '#/components/schemas/CloudResponse'
-        - type: object
-          properties:
-            result:
-              $ref: '#/components/schemas/DeviceListResult'
+      $ref: './devices.openapi.yaml#/components/schemas/DeviceListResponse'
     DeviceListResult:
-      type: object
-      description: The array may be empty. Each element is a cloud device record.
-      properties:
-        deviceList:
-          type: array
-          items:
-            $ref: '#/components/schemas/Device'
+      $ref: './devices.openapi.yaml#/components/schemas/DeviceListResult'
     Device:
-      type: object
-      description: >-
-        Cloud device record. The client retains records with unknown deviceType
-        values, but its Go model does not retain fields outside those listed here.
-      properties:
-        deviceType:
-          type: string
-          description: >-
-            The client classifies the known plug and bulb values below; other
-            values remain valid and are classified as Other.
-          x-extensible-enum:
-            - IOT.SMARTPLUGSWITCH
-            - IOT.RANGEEXTENDER.SMARTPLUG
-            - IOT.SMARTBULB
-          x-go-wire-constant-names:
-            - value: IOT.SMARTPLUGSWITCH
-              name: DeviceTypeSmartPlug
-            - value: IOT.RANGEEXTENDER.SMARTPLUG
-              name: DeviceTypeRangeExtenderPlug
-            - value: IOT.SMARTBULB
-              name: DeviceTypeSmartBulb
-        deviceId:
-          type: string
-          description: Pass this value as params.deviceId for passthrough commands.
-        alias:
-          type: string
-          description: Display name shown to the user.
-        deviceModel:
-          type: string
-        deviceMac:
-          type: string
-        fwVer:
-          type: string
-        deviceHwVer:
-          type: string
-        hwId:
-          type: string
-        fwId:
-          type: string
-        oemId:
-          type: string
-        appServerUrl:
-          type: string
-          format: uri
-        deviceRegion:
-          type: string
-        status:
-          type: integer
-          description: Cloud-reported status; interpretation may vary by device.
-        isSameRegion:
-          type: boolean
-        is_dimmable:
-          type: integer
-          description: Cloud-reported capability flag; 1 indicates dimming support.
-          x-extensible-enum:
-            - 0
-            - 1
-          x-go-wire-constant-names:
-            - value: 0
-              name: DeviceCapabilityDisabled
-            - value: 1
-              name: DeviceCapabilityEnabled
-        is_color:
-          type: integer
-          description: Cloud-reported capability flag; 1 indicates color support.
-          x-extensible-enum:
-            - 0
-            - 1
-          x-go-wire-constant-names:
-            - value: 0
-              name: DeviceCapabilityDisabled
-            - value: 1
-              name: DeviceCapabilityEnabled
-        is_variable_color_temp:
-          type: integer
-          description: Cloud-reported capability flag; 1 indicates color temperature support.
-          x-extensible-enum:
-            - 0
-            - 1
-          x-go-wire-constant-names:
-            - value: 0
-              name: DeviceCapabilityDisabled
-            - value: 1
-              name: DeviceCapabilityEnabled
-        brightness:
-          type: integer
-      additionalProperties: true
+      $ref: './devices.openapi.yaml#/components/schemas/Device'
     PassthroughResponse:
-      allOf:
-        - $ref: '#/components/schemas/CloudResponse'
-        - type: object
-          properties:
-            result:
-              $ref: '#/components/schemas/PassthroughResult'
+      $ref: './passthrough.openapi.yaml#/components/schemas/PassthroughResponse'
     PassthroughResult:
-      type: object
-      properties:
-        responseData:
-          type: string
-          x-go-type: string
-          contentMediaType: application/json
-          contentSchema:
-            $ref: '#/components/schemas/PassthroughCommandResult'
-          description: |
-            JSON-encoded device response. Decode the string to interpret
-            PassthroughCommandResult. Device errors may also appear at the top level.
-          example: '{"system":{"get_sysinfo":{"relay_state":1,"on_time":3600,"err_code":0}}}'
+      $ref: './passthrough.openapi.yaml#/components/schemas/PassthroughResult'
     PassthroughCommandResult:
-      description: Inner JSON value after decoding result.responseData.
-      anyOf:
-        - $ref: '#/components/schemas/SystemCommandResult'
-        - $ref: '#/components/schemas/LightingCommandResult'
-        - $ref: '#/components/schemas/DeviceCommandError'
+      $ref: './passthrough.openapi.yaml#/components/schemas/PassthroughCommandResult'
     SystemCommandResult:
-      type: object
-      properties:
-        system:
-          x-go-compat-constant-name: NamespaceSystem
-          type: object
-          properties:
-            get_sysinfo:
-              x-go-compat-constant-name: CmdGetSysInfo
-              $ref: '#/components/schemas/SysInfo'
-            set_relay_state:
-              x-go-compat-constant-name: CmdSetRelayState
-              $ref: '#/components/schemas/CommandAcknowledgement'
-            reboot:
-              x-go-compat-constant-name: CmdReboot
-              $ref: '#/components/schemas/CommandAcknowledgement'
-            set_dev_alias:
-              x-go-compat-constant-name: CmdSetDevAlias
-              $ref: '#/components/schemas/CommandAcknowledgement'
-          additionalProperties: true
-      additionalProperties: true
+      $ref: './passthrough.openapi.yaml#/components/schemas/SystemCommandResult'
     LightingCommandResult:
-      type: object
-      properties:
-        smartlife.iot.smartbulb.lightingservice:
-          x-go-compat-constant-name: NamespaceLightingService
-          type: object
-          properties:
-            get_light_state:
-              x-go-compat-constant-name: CmdGetLightState
-              $ref: '#/components/schemas/LightState'
-            transition_light_state:
-              x-go-compat-constant-name: CmdTransitionLightState
-              $ref: '#/components/schemas/CommandAcknowledgement'
-          additionalProperties: true
-      additionalProperties: true
+      $ref: './passthrough.openapi.yaml#/components/schemas/LightingCommandResult'
     CommandAcknowledgement:
-      type: object
-      properties:
-        err_code:
-          type: integer
-          description: Zero indicates success; -1 indicates an unsupported command in the implemented client.
-          x-extensible-enum:
-            - 0
-            - -1
-          x-go-wire-constant-names:
-            - value: 0
-              name: DeviceErrorOK
-            - value: -1
-              name: DeviceErrorUnsupported
-        err_msg:
-          type: string
-      additionalProperties: true
+      $ref: './passthrough.openapi.yaml#/components/schemas/CommandAcknowledgement'
     DeviceCommandError:
-      type: object
-      required:
-        - err_code
-      properties:
-        err_code:
-          type: integer
-          description: Non-zero device-level error code; -1 indicates an unsupported command.
-          x-extensible-enum:
-            - -1
-          x-go-wire-constant-names:
-            - value: -1
-              name: DeviceErrorUnsupported
-        err_msg:
-          type: string
-      additionalProperties: true
+      $ref: './passthrough.openapi.yaml#/components/schemas/DeviceCommandError'
     SysInfo:
-      type: object
-      properties:
-        sw_ver:
-          type: string
-        hw_ver:
-          type: string
-        model:
-          type: string
-        deviceId:
-          type: string
-        alias:
-          type: string
-        relay_state:
-          type: integer
-          x-extensible-enum:
-            - 0
-            - 1
-          x-go-wire-constant-names:
-            - value: 0
-              name: DeviceStateOff
-            - value: 1
-              name: DeviceStateOn
-        on_time:
-          type: integer
-        err_code:
-          type: integer
-          x-extensible-enum:
-            - 0
-          x-go-wire-constant-names:
-            - value: 0
-              name: DeviceErrorOK
-      additionalProperties: true
+      $ref: './passthrough.openapi.yaml#/components/schemas/SysInfo'
     LightState:
-      type: object
-      properties:
-        on_off:
-          type: integer
-        brightness:
-          type: integer
-        hue:
-          type: integer
-        saturation:
-          type: integer
-        color_temp:
-          type: integer
-        mode:
-          type: string
-        err_code:
-          type: integer
-      additionalProperties: true
+      $ref: './passthrough.openapi.yaml#/components/schemas/LightState'

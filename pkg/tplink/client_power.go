@@ -12,7 +12,7 @@ import (
 func (client *Client) TurnOn(ctx context.Context, request TurnOnRequest) error {
 	var cmd dependencymodels.SystemSetRelayStateCommand
 
-	cmd.System.SetRelayState.State = dependencymodels.SystemSetRelayStateCommandSystemSetRelayStateStateN1
+	cmd.System.SetRelayState.State = dependencymodels.DeviceStateOn
 
 	data, err := client.doPassthrough(ctx, "TurnOn", request.Auth, request.DeviceID, cmd)
 	if err != nil {
@@ -31,7 +31,7 @@ func (client *Client) TurnOn(ctx context.Context, request TurnOnRequest) error {
 func (client *Client) TurnOff(ctx context.Context, request TurnOffRequest) error {
 	var cmd dependencymodels.SystemSetRelayStateCommand
 
-	cmd.System.SetRelayState.State = dependencymodels.SystemSetRelayStateCommandSystemSetRelayStateStateN0
+	cmd.System.SetRelayState.State = dependencymodels.DeviceStateOff
 
 	data, err := client.doPassthrough(ctx, "TurnOff", request.Auth, request.DeviceID, cmd)
 	if err != nil {
