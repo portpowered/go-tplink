@@ -1,6 +1,6 @@
 # go-tplink checklist
 
-Requirements copied from the shared template at `4b2eaf0d8b7250f173c622f061a048a4d7e219f5`.
+Requirements copied from the shared template at `05e93ff08899414207e9335717e7d7b0190ebd09`.
 
 Earlier scoped lint and replay reviews do not certify these expanded requirements.
 Keep every item open until two independent reviewers verify all items at the final
@@ -42,6 +42,11 @@ implementation commit.
    helper returns an unregistered fixed value or mutates a generated map, plus
    a caller-defined positive control. A per-file scan does not prove package-wide
    provenance.
+   Do not classify unresolved provenance as caller-defined input. If recursion,
+   a traversal limit, or an unresolved library helper prevents proving a schema-owned
+   wire value or key, fail the gate with a diagnostic. Test a helper chain beyond
+   the traversal limit and a recursive fixed fallback; retain proven caller-input
+   positives.
    Check all intermediate keys in indexed receiver paths and aliases, including slices,
    pointer dereferences, and type assertions. Test inferred nested composites and retain
    positive cases for explicitly caller-defined open keys.
@@ -143,4 +148,4 @@ implementation commit.
 
 - [ ] **16.** Provide an installable standalone CLI that consumes the public SDK so customers can test the library without a consuming application. Use a separate module under `cmd/go-<provider>`; keep CLI concerns out of the SDK. Cover authentication and explicit token exchange, device or endpoint discovery, important read/control workflows, and event/session lifecycles where supported. Include useful help, machine-readable output, nonzero failures, cancellation, and session cleanup. Accept credentials through documented environment, stdin, or explicit file inputs; keep secrets out of arguments and ordinary output, and make credential export an explicit action. Require explicit commands for device changes. Document installation and customer examples in an MDX guide. Test CLI commands offline through injected paired request/response transports, including authentication errors and lifecycle cleanup, and run blocking pinned all-linter, build, test, and module checks for the CLI in CI. Verify a separate consumer installation from the published CLI module and release its module tags with the SDK.
 
-See [verification](https://github.com/portpowered/go-third-party-template/blob/4b2eaf0d8b7250f173c622f061a048a4d7e219f5/docs/verification.md), [client design](https://github.com/portpowered/go-third-party-template/blob/4b2eaf0d8b7250f173c622f061a048a4d7e219f5/docs/client-design.md), and [website publishing](https://github.com/portpowered/go-third-party-template/blob/4b2eaf0d8b7250f173c622f061a048a4d7e219f5/docs/website.md).
+See [verification](https://github.com/portpowered/go-third-party-template/blob/05e93ff08899414207e9335717e7d7b0190ebd09/docs/verification.md), [client design](https://github.com/portpowered/go-third-party-template/blob/05e93ff08899414207e9335717e7d7b0190ebd09/docs/client-design.md), and [website publishing](https://github.com/portpowered/go-third-party-template/blob/05e93ff08899414207e9335717e7d7b0190ebd09/docs/website.md).
