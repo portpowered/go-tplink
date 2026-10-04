@@ -18,6 +18,7 @@ const (
 	dependencymodelsImportPath  = "github.com/portpowered/go-tplink/pkg/dependencymodels"
 	tplinkmodelsImportPath      = "github.com/portpowered/go-tplink/pkg/tplinkmodels"
 	netURLImportPath            = "net/url"
+	cloudImportPath             = "github.com/portpowered/go-tplink/pkg/dependencies/cloud"
 	stringTypeName              = "string"
 	getMethodName               = "Get"
 	deleteName                  = "delete"
@@ -116,16 +117,24 @@ func checkGeneratedScalarValues(
 ) error {
 	generatedVariables := make(map[token.Pos]bool)
 	scalarAliases := make(map[token.Pos]bool)
+	fixedScalarFunctions := make(map[token.Pos]bool)
 
 	collectGeneratedVariableAliases(file, generatedTypes, generatedVariables)
-	collectScalarAliases(file, scalarAliases, generatedTypes)
+	collectScalarAliases(file, scalarAliases, fixedScalarFunctions, generatedTypes)
 
-	err := checkGeneratedScalarAssignments(path, fileSet, file, generatedVariables, scalarAliases)
+	err := checkGeneratedScalarAssignments(
+		path,
+		fileSet,
+		file,
+		generatedVariables,
+		scalarAliases,
+		fixedScalarFunctions,
+	)
 	if err != nil {
 		return err
 	}
 
-	return checkGeneratedScalarComposites(path, fileSet, file, generatedTypes, scalarAliases)
+	return checkGeneratedScalarComposites(path, fileSet, file, generatedTypes, scalarAliases, fixedScalarFunctions)
 }
 
 func checkGeneratedScalarAssignments(
@@ -133,6 +142,7 @@ func checkGeneratedScalarAssignments(
 	fileSet *token.FileSet,
 	file *ast.File,
 	generatedVariables, scalarAliases map[token.Pos]bool,
+	fixedScalarFunctions map[token.Pos]bool,
 ) error {
 	var violation error
 
@@ -144,7 +154,15 @@ func checkGeneratedScalarAssignments(
 		assignment, ok := node.(*ast.AssignStmt)
 
 		if ok {
-			violation = generatedAssignmentScalarViolation(path, fileSet, assignment, generatedVariables, scalarAliases)
+			violation = generatedAssignmentScalarViolation(
+				path,
+				fileSet,
+				assignment,
+				generatedVariables,
+				scalarAliases,
+				file,
+				fixedScalarFunctions,
+			)
 		}
 
 		return violation == nil
@@ -158,13 +176,17 @@ func generatedAssignmentScalarViolation(
 	fileSet *token.FileSet,
 	assignment *ast.AssignStmt,
 	generatedVariables, scalarAliases map[token.Pos]bool,
+	file *ast.File,
+	fixedScalarFunctions map[token.Pos]bool,
 ) error {
 	for index, target := range assignment.Lhs {
 		if index >= len(assignment.Rhs) || !isGeneratedModelField(target, generatedVariables) {
 			continue
 		}
 
-		if containsFixedScalar(assignment.Rhs[index], scalarAliases) {
+		if containsFixedScalar(
+			assignment.Rhs[index], scalarAliases, file, fixedScalarFunctions,
+		) {
 			return sourceError(fileSet, path, assignment.Rhs[index].Pos(), generatedScalarMessage)
 		}
 	}
@@ -178,6 +200,7 @@ func checkGeneratedScalarComposites(
 	file *ast.File,
 	generatedTypes map[string]bool,
 	scalarAliases map[token.Pos]bool,
+	fixedScalarFunctions map[token.Pos]bool,
 ) error {
 	var violation error
 
@@ -193,7 +216,9 @@ func checkGeneratedScalarComposites(
 		}
 
 		for _, element := range composite.Elts {
-			if containsFixedScalar(compositeValue(element), scalarAliases) {
+			if containsFixedScalar(
+				compositeValue(element), scalarAliases, file, fixedScalarFunctions,
+			) {
 				violation = sourceError(fileSet, path, element.Pos(), generatedScalarMessage)
 
 				return false
@@ -393,19 +418,179 @@ func importedPath(file *ast.File, expression ast.Expr) string {
 	return ""
 }
 
-func collectScalarAliases(file *ast.File, aliases map[token.Pos]bool, generatedTypes map[string]bool) {
-	for _, declaration := range file.Decls {
-		collectPackageScalarAliases(declaration, aliases, file, generatedTypes)
+func collectScalarAliases(
+	file *ast.File,
+	aliases, fixedFunctions map[token.Pos]bool,
+	generatedTypes map[string]bool,
+) {
+	for {
+		before := len(aliases) + len(fixedFunctions)
+
+		for _, declaration := range file.Decls {
+			collectPackageScalarAliases(declaration, aliases, file, generatedTypes, fixedFunctions)
+		}
+
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Body == nil {
+				continue
+			}
+
+			collectFunctionScalarAliases(file, function, aliases, generatedTypes, fixedFunctions)
+		}
+
+		collectFixedScalarFunctions(file, aliases, fixedFunctions, generatedTypes)
+
+		if before == len(aliases)+len(fixedFunctions) {
+			return
+		}
+	}
+}
+
+func collectFixedScalarFunctions(
+	file *ast.File,
+	aliases, fixedFunctions map[token.Pos]bool,
+	generatedTypes map[string]bool,
+) {
+	check := func(functionType *ast.FuncType, body *ast.BlockStmt, position token.Pos) {
+		if position == token.NoPos || body == nil || !hasSingleScalarResult(file, functionType, generatedTypes) {
+			return
+		}
+
+		if functionReturnsFixedScalar(file, functionType, body, aliases, fixedFunctions) {
+			fixedFunctions[position] = true
+		}
 	}
 
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Body == nil {
-			continue
+		if ok {
+			check(function.Type, function.Body, identifierObjectPosition(function.Name))
+		}
+	}
+
+	ast.Inspect(file, func(node ast.Node) bool {
+		function, ok := node.(*ast.FuncLit)
+		if ok {
+			check(function.Type, function.Body, function.Pos())
 		}
 
-		collectFunctionScalarAliases(file, function, aliases, generatedTypes)
+		return true
+	})
+}
+
+func hasSingleScalarResult(file *ast.File, functionType *ast.FuncType, generatedTypes map[string]bool) bool {
+	if functionType == nil || functionType.Results == nil || len(functionType.Results.List) != 1 {
+		return false
 	}
+
+	return isWireScalarType(file, functionType.Results.List[0].Type, generatedTypes, make(map[string]bool))
+}
+
+func isWireScalarType(
+	file *ast.File,
+	expression ast.Expr,
+	generatedTypes map[string]bool,
+	visited map[string]bool,
+) bool {
+	expression = unparen(expression)
+	switch typed := expression.(type) {
+	case *ast.StarExpr:
+		return isWireScalarType(file, typed.X, generatedTypes, visited)
+	case *ast.Ident:
+		if isScalarConversion(typed.Name) {
+			return true
+		}
+
+		if typed.Obj == nil || typed.Obj.Kind != ast.Typ || visited[typed.Name] {
+			return false
+		}
+
+		spec, ok := typed.Obj.Decl.(*ast.TypeSpec)
+		if !ok {
+			return false
+		}
+
+		visited[typed.Name] = true
+
+		return isWireScalarType(file, spec.Type, generatedTypes, visited)
+	case *ast.SelectorExpr:
+		return importedPath(file, typed.X) == dependencymodelsImportPath && !generatedTypes[typed.Sel.Name]
+	}
+
+	return false
+}
+
+func functionReturnsFixedScalar(
+	file *ast.File,
+	functionType *ast.FuncType,
+	body *ast.BlockStmt,
+	aliases, fixedFunctions map[token.Pos]bool,
+) bool {
+	resultNames := functionResultNames(functionType, 0)
+	found := false
+
+	ast.Inspect(body, func(node ast.Node) bool {
+		if node == nil || found {
+			return false
+		}
+
+		if _, nested := node.(*ast.FuncLit); nested {
+			return false
+		}
+
+		statement, ok := node.(*ast.ReturnStmt)
+		if !ok {
+			return true
+		}
+
+		if len(statement.Results) != 0 {
+			found = len(statement.Results) == 1 && containsScalarSyntax(
+				statement.Results[0], aliases, file, fixedFunctions,
+			)
+
+			return !found
+		}
+
+		for _, resultName := range resultNames {
+			if aliases[identifierObjectPosition(resultName)] {
+				found = true
+
+				return false
+			}
+		}
+
+		return true
+	})
+
+	return found
+}
+
+func functionResultNames(functionType *ast.FuncType, resultIndex int) []*ast.Ident {
+	if functionType == nil || functionType.Results == nil {
+		return nil
+	}
+
+	index := 0
+
+	for _, field := range functionType.Results.List {
+		count := len(field.Names)
+		if count == 0 {
+			count = 1
+		}
+
+		if resultIndex >= index && resultIndex < index+count {
+			if len(field.Names) == 0 {
+				return nil
+			}
+
+			return []*ast.Ident{field.Names[resultIndex-index]}
+		}
+
+		index += count
+	}
+
+	return nil
 }
 
 func collectPackageScalarAliases(
@@ -413,6 +598,7 @@ func collectPackageScalarAliases(
 	aliases map[token.Pos]bool,
 	file *ast.File,
 	generatedTypes map[string]bool,
+	fixedFunctions map[token.Pos]bool,
 ) {
 	general, ok := declaration.(*ast.GenDecl)
 	if !ok || (general.Tok != token.CONST && general.Tok != token.VAR) {
@@ -426,7 +612,7 @@ func collectPackageScalarAliases(
 		}
 
 		for index, name := range spec.Names {
-			addScalarAlias(name, index, spec.Values, aliases, file, generatedTypes)
+			addScalarAlias(name, index, spec.Values, aliases, file, generatedTypes, fixedFunctions)
 		}
 	}
 }
@@ -436,12 +622,13 @@ func collectFunctionScalarAliases(
 	function *ast.FuncDecl,
 	aliases map[token.Pos]bool,
 	generatedTypes map[string]bool,
+	fixedFunctions map[token.Pos]bool,
 ) {
 	for {
 		before := len(aliases)
 
 		ast.Inspect(function.Body, func(node ast.Node) bool {
-			collectScalarAliasNode(file, node, aliases, generatedTypes)
+			collectScalarAliasNode(file, node, aliases, generatedTypes, fixedFunctions)
 
 			return true
 		})
@@ -452,17 +639,23 @@ func collectFunctionScalarAliases(
 	}
 }
 
-func collectScalarAliasNode(file *ast.File, node ast.Node, aliases map[token.Pos]bool, generatedTypes map[string]bool) {
+func collectScalarAliasNode(
+	file *ast.File,
+	node ast.Node,
+	aliases map[token.Pos]bool,
+	generatedTypes map[string]bool,
+	fixedFunctions map[token.Pos]bool,
+) {
 	switch typed := node.(type) {
 	case *ast.ValueSpec:
 		for index, name := range typed.Names {
-			addScalarAlias(name, index, typed.Values, aliases, file, generatedTypes)
+			addScalarAlias(name, index, typed.Values, aliases, file, generatedTypes, fixedFunctions)
 		}
 	case *ast.AssignStmt:
 		for index, target := range typed.Lhs {
 			name, ok := unparen(target).(*ast.Ident)
 			if ok {
-				addScalarAlias(name, index, typed.Rhs, aliases, file, generatedTypes)
+				addScalarAlias(name, index, typed.Rhs, aliases, file, generatedTypes, fixedFunctions)
 			}
 		}
 	}
@@ -475,19 +668,26 @@ func addScalarAlias(
 	aliases map[token.Pos]bool,
 	file *ast.File,
 	generatedTypes map[string]bool,
+	fixedFunctions map[token.Pos]bool,
 ) {
 	if name.Obj == nil || index >= len(values) {
 		return
 	}
 
 	value := values[index]
-	if isFixedScalarSource(value, aliases, file, generatedTypes) || containsScalarSyntax(value, aliases) {
+	if isFixedScalarSource(value, aliases, file, generatedTypes, fixedFunctions) ||
+		containsScalarSyntax(value, aliases, file, fixedFunctions) {
 		aliases[identifierObjectPosition(name)] = true
 	}
 }
 
-func containsFixedScalar(expression ast.Expr, aliases map[token.Pos]bool) bool {
-	return containsScalarSyntax(expression, aliases)
+func containsFixedScalar(
+	expression ast.Expr,
+	aliases map[token.Pos]bool,
+	file *ast.File,
+	fixedFunctions map[token.Pos]bool,
+) bool {
+	return containsScalarSyntax(expression, aliases, file, fixedFunctions)
 }
 
 func isFixedScalarSource(
@@ -495,6 +695,7 @@ func isFixedScalarSource(
 	aliases map[token.Pos]bool,
 	file *ast.File,
 	generatedTypes map[string]bool,
+	fixedFunctions map[token.Pos]bool,
 ) bool {
 	expression = unparen(expression)
 	switch typed := expression.(type) {
@@ -503,9 +704,9 @@ func isFixedScalarSource(
 	case *ast.Ident:
 		return typed.Name == "true" || typed.Name == "false" || aliases[identifierObjectPosition(typed)]
 	case *ast.UnaryExpr:
-		return isFixedScalarSource(typed.X, aliases, file, generatedTypes)
+		return isFixedScalarSource(typed.X, aliases, file, generatedTypes, fixedFunctions)
 	case *ast.CallExpr:
-		return fixedScalarCallSource(typed, aliases, file, generatedTypes)
+		return fixedScalarCallSource(typed, aliases, file, generatedTypes, fixedFunctions)
 	}
 
 	return false
@@ -521,7 +722,12 @@ func fixedScalarCallSource(
 	aliases map[token.Pos]bool,
 	file *ast.File,
 	generatedTypes map[string]bool,
+	fixedFunctions map[token.Pos]bool,
 ) bool {
+	if isFixedScalarHelperCall(file, call, fixedFunctions) {
+		return true
+	}
+
 	if len(call.Args) != 1 {
 		return false
 	}
@@ -533,7 +739,7 @@ func fixedScalarCallSource(
 		return false
 	}
 
-	return isFixedScalarSource(call.Args[0], aliases, file, generatedTypes)
+	return isFixedScalarSource(call.Args[0], aliases, file, generatedTypes, fixedFunctions)
 }
 
 func isScalarConversion(name string) bool {
@@ -546,7 +752,12 @@ func isScalarConversion(name string) bool {
 	}
 }
 
-func containsScalarSyntax(expression ast.Expr, aliases map[token.Pos]bool) bool {
+func containsScalarSyntax(
+	expression ast.Expr,
+	aliases map[token.Pos]bool,
+	file *ast.File,
+	fixedFunctions map[token.Pos]bool,
+) bool {
 	var found bool
 
 	ast.Inspect(expression, func(node ast.Node) bool {
@@ -554,12 +765,379 @@ func containsScalarSyntax(expression ast.Expr, aliases map[token.Pos]bool) bool 
 			return false
 		}
 
-		found = isScalarSyntaxNode(node, aliases)
+		found = isScalarSyntaxNode(node, aliases) || isFixedScalarHelperExpression(file, node, fixedFunctions)
 
 		return !found
 	})
 
 	return found
+}
+
+func isFixedScalarHelperExpression(file *ast.File, node ast.Node, fixedFunctions map[token.Pos]bool) bool {
+	call, ok := node.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+
+	for position := range localFunctionTargets(file, call.Fun, make(map[token.Pos]bool)) {
+		if fixedFunctions[position] {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isFixedScalarHelperCall(file *ast.File, call *ast.CallExpr, fixedFunctions map[token.Pos]bool) bool {
+	return isFixedScalarHelperExpression(file, call, fixedFunctions)
+}
+
+func localFunctionTargets(file *ast.File, expression ast.Expr, visiting map[token.Pos]bool) map[token.Pos]bool {
+	expression = unparen(expression)
+
+	switch typed := expression.(type) {
+	case *ast.FuncLit:
+		return map[token.Pos]bool{typed.Pos(): true}
+	case *ast.Ident:
+		return localFunctionTargetsForIdentifier(file, typed, visiting)
+	case *ast.CallExpr:
+		return localFunctionTargetsFromCall(file, typed, visiting)
+	}
+
+	return make(map[token.Pos]bool)
+}
+
+func localFunctionTargetsForIdentifier(
+	file *ast.File,
+	identifier *ast.Ident,
+	visiting map[token.Pos]bool,
+) map[token.Pos]bool {
+	targets := make(map[token.Pos]bool)
+	if identifier.Obj == nil {
+		return targets
+	}
+
+	switch declaration := identifier.Obj.Decl.(type) {
+	case *ast.FuncDecl:
+		targets[identifierObjectPosition(declaration.Name)] = true
+	case *ast.ValueSpec:
+		index := valueNameIndex(declaration.Names, identifier)
+		if index >= 0 && index < len(declaration.Values) {
+			return localFunctionTargetsFromBinding(file, identifier, declaration.Values[index], visiting)
+		}
+	case *ast.AssignStmt:
+		index := assignmentNameIndex(declaration.Lhs, identifier)
+		if index >= 0 && index < len(declaration.Rhs) {
+			return localFunctionTargetsFromBinding(file, identifier, declaration.Rhs[index], visiting)
+		}
+	}
+
+	return targets
+}
+
+func localFunctionTargetsFromBinding(
+	file *ast.File,
+	identifier *ast.Ident,
+	source ast.Expr,
+	visiting map[token.Pos]bool,
+) map[token.Pos]bool {
+	targets := make(map[token.Pos]bool)
+
+	position := identifierObjectPosition(identifier)
+
+	if position == token.NoPos || visiting[position] {
+		return targets
+	}
+
+	visiting[position] = true
+	defer delete(visiting, position)
+
+	return localFunctionTargets(file, source, visiting)
+}
+
+func localFunctionTargetsFromCall(file *ast.File, call *ast.CallExpr, visiting map[token.Pos]bool) map[token.Pos]bool {
+	targets := make(map[token.Pos]bool)
+
+	for functionPosition := range localFunctionTargets(file, call.Fun, visiting) {
+		if visiting[functionPosition] {
+			continue
+		}
+
+		visiting[functionPosition] = true
+		mergeReturnedFunctionTargets(file, functionNodeAt(file, functionPosition), targets, visiting)
+		delete(visiting, functionPosition)
+	}
+
+	return targets
+}
+
+func mergeReturnedFunctionTargets(
+	file *ast.File,
+	function ast.Node,
+	targets, visiting map[token.Pos]bool,
+) {
+	for _, returned := range returnedFunctionExpressions(file, function) {
+		mergeFunctionTargets(targets, localFunctionTargets(file, returned, visiting))
+	}
+}
+
+func mergeFunctionTargets(targets, additions map[token.Pos]bool) {
+	for position := range additions {
+		targets[position] = true
+	}
+}
+
+func valueNameIndex(names []*ast.Ident, identifier *ast.Ident) int {
+	for index, name := range names {
+		if identifierObjectPosition(name) == identifierObjectPosition(identifier) {
+			return index
+		}
+	}
+
+	return -1
+}
+
+func assignmentNameIndex(expressions []ast.Expr, identifier *ast.Ident) int {
+	for index, expression := range expressions {
+		name, ok := unparen(expression).(*ast.Ident)
+		if ok && identifierObjectPosition(name) == identifierObjectPosition(identifier) {
+			return index
+		}
+	}
+
+	return -1
+}
+
+func functionNodeAt(file *ast.File, position token.Pos) ast.Node {
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && identifierObjectPosition(function.Name) == position {
+			return function
+		}
+	}
+
+	var found ast.Node
+
+	ast.Inspect(file, func(node ast.Node) bool {
+		if literal, ok := node.(*ast.FuncLit); ok && literal.Pos() == position {
+			found = literal
+
+			return false
+		}
+
+		return found == nil
+	})
+
+	return found
+}
+
+func returnedFunctionExpressions(file *ast.File, function ast.Node) []ast.Expr {
+	functionType, body := functionTypeAndBody(function)
+	if !hasSingleFunctionResult(file, functionType) || body == nil {
+		return nil
+	}
+
+	resultNames := functionResultNames(functionType, 0)
+
+	resultPositions := make(map[token.Pos]bool, len(resultNames))
+
+	for _, name := range resultNames {
+		resultPositions[identifierObjectPosition(name)] = true
+	}
+
+	return collectFunctionResultExpressions(body, resultPositions)
+}
+
+func hasSingleFunctionResult(file *ast.File, functionType *ast.FuncType) bool {
+	if functionType == nil || functionType.Results == nil || len(functionType.Results.List) != 1 {
+		return false
+	}
+
+	_, isFunction := functionTypeExpression(file, functionType.Results.List[0].Type, make(map[token.Pos]bool))
+
+	return isFunction
+}
+
+func collectFunctionResultExpressions(body *ast.BlockStmt, resultPositions map[token.Pos]bool) []ast.Expr {
+	var expressions []ast.Expr
+
+	ast.Inspect(body, func(node ast.Node) bool {
+		if node == nil {
+			return false
+		}
+
+		if _, nested := node.(*ast.FuncLit); nested {
+			return false
+		}
+
+		switch typed := node.(type) {
+		case *ast.ReturnStmt:
+			if len(typed.Results) > 0 {
+				expressions = append(expressions, typed.Results[0])
+			}
+		case *ast.AssignStmt:
+			for index, target := range typed.Lhs {
+				name, ok := unparen(target).(*ast.Ident)
+				if ok && resultPositions[identifierObjectPosition(name)] && index < len(typed.Rhs) {
+					expressions = append(expressions, typed.Rhs[index])
+				}
+			}
+		}
+
+		return true
+	})
+
+	return expressions
+}
+
+func functionTypeAndBody(function ast.Node) (*ast.FuncType, *ast.BlockStmt) {
+	switch typed := function.(type) {
+	case *ast.FuncDecl:
+		return typed.Type, typed.Body
+	case *ast.FuncLit:
+		return typed.Type, typed.Body
+	default:
+		return nil, nil
+	}
+}
+
+func functionTypeExpression(file *ast.File, expression ast.Expr, visited map[token.Pos]bool) (*ast.FuncType, bool) {
+	if expression == nil {
+		return nil, false
+	}
+
+	expression = unparen(expression)
+	switch typed := expression.(type) {
+	case *ast.FuncType:
+		return typed, true
+	case *ast.Ident:
+		return functionTypeForTypeIdentifier(file, typed, visited)
+	case *ast.StarExpr:
+		return functionTypeExpression(file, typed.X, visited)
+	default:
+		return nil, false
+	}
+}
+
+func functionTypeForTypeIdentifier(
+	file *ast.File,
+	identifier *ast.Ident,
+	visited map[token.Pos]bool,
+) (*ast.FuncType, bool) {
+	position := identifierObjectPosition(identifier)
+	if identifier.Obj == nil || identifier.Obj.Kind != ast.Typ || position == token.NoPos || visited[position] {
+		return nil, false
+	}
+
+	spec, ok := identifier.Obj.Decl.(*ast.TypeSpec)
+	if !ok {
+		return nil, false
+	}
+
+	visited[position] = true
+
+	return functionTypeExpression(file, spec.Type, visited)
+}
+
+func functionTypeForExpression(file *ast.File, expression ast.Expr, visiting map[token.Pos]bool) (*ast.FuncType, bool) {
+	expression = unparen(expression)
+	switch typed := expression.(type) {
+	case *ast.FuncLit:
+		return typed.Type, true
+	case *ast.Ident:
+		return functionTypeForIdentifier(file, typed, visiting)
+	case *ast.CallExpr:
+		return functionTypeForCall(file, typed, visiting)
+	}
+
+	return nil, false
+}
+
+func functionTypeForIdentifier(
+	file *ast.File,
+	identifier *ast.Ident,
+	visiting map[token.Pos]bool,
+) (*ast.FuncType, bool) {
+	if identifier.Obj == nil {
+		return nil, false
+	}
+
+	position := identifierObjectPosition(identifier)
+	if position == token.NoPos || visiting[position] {
+		return nil, false
+	}
+
+	switch declaration := identifier.Obj.Decl.(type) {
+	case *ast.FuncDecl:
+		return declaration.Type, true
+	case *ast.ValueSpec:
+		return functionTypeForValueSpec(file, identifier, declaration, position, visiting)
+	case *ast.AssignStmt:
+		return functionTypeForAssignment(file, identifier, declaration, position, visiting)
+	default:
+		return nil, false
+	}
+}
+
+func functionTypeForValueSpec(
+	file *ast.File,
+	identifier *ast.Ident,
+	declaration *ast.ValueSpec,
+	position token.Pos,
+	visiting map[token.Pos]bool,
+) (*ast.FuncType, bool) {
+	if declaration.Type != nil {
+		functionType, isFunction := functionTypeExpression(file, declaration.Type, make(map[token.Pos]bool))
+		if isFunction {
+			return functionType, true
+		}
+	}
+
+	index := valueNameIndex(declaration.Names, identifier)
+	if index < 0 || index >= len(declaration.Values) {
+		return nil, false
+	}
+
+	visiting[position] = true
+	defer delete(visiting, position)
+
+	return functionTypeForExpression(file, declaration.Values[index], visiting)
+}
+
+func functionTypeForAssignment(
+	file *ast.File,
+	identifier *ast.Ident,
+	declaration *ast.AssignStmt,
+	position token.Pos,
+	visiting map[token.Pos]bool,
+) (*ast.FuncType, bool) {
+	index := assignmentNameIndex(declaration.Lhs, identifier)
+	if index < 0 || index >= len(declaration.Rhs) {
+		return nil, false
+	}
+
+	visiting[position] = true
+	defer delete(visiting, position)
+
+	return functionTypeForExpression(file, declaration.Rhs[index], visiting)
+}
+
+func functionTypeForCall(file *ast.File, call *ast.CallExpr, visiting map[token.Pos]bool) (*ast.FuncType, bool) {
+	resultType, hasResult := callableResultType(file, call.Fun, visiting)
+	if !hasResult {
+		return nil, false
+	}
+
+	return functionTypeExpression(file, resultType, make(map[token.Pos]bool))
+}
+
+func callableResultType(file *ast.File, expression ast.Expr, visiting map[token.Pos]bool) (ast.Expr, bool) {
+	functionType, ok := functionTypeForExpression(file, expression, visiting)
+	if !ok || functionType.Results == nil || len(functionType.Results.List) != 1 {
+		return nil, false
+	}
+
+	return functionType.Results.List[0].Type, true
 }
 
 func isScalarSyntaxNode(node ast.Node, aliases map[token.Pos]bool) bool {
@@ -602,6 +1180,387 @@ func checkEndpointCallSite(root string) error {
 	}
 
 	return checkEndpointSource(path, source)
+}
+
+func checkClientCloudSendCallSite(path string, fileSet *token.FileSet, file *ast.File) error {
+	requestMethod, sendCall, err := findClientCloudSendCallSite(file)
+	if err != nil {
+		return err
+	}
+
+	receiver, err := clientRequestReceiver(requestMethod)
+	if err != nil {
+		return err
+	}
+
+	return validateClientCloudSendReceiver(path, fileSet, requestMethod, sendCall, receiver)
+}
+
+func findClientCloudSendCallSite(file *ast.File) (*ast.FuncDecl, *ast.CallExpr, error) {
+	var (
+		requestMethod *ast.FuncDecl
+		sendCalls     []*ast.CallExpr
+	)
+
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Name.Name == "doCloudRequest" && isClientReceiver(function) {
+			requestMethod = function
+		}
+	}
+
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		if isCloudSendCall(file, call) {
+			sendCalls = append(sendCalls, call)
+		}
+
+		return true
+	})
+
+	if !hasSingleClientCloudSend(requestMethod, sendCalls) {
+		return nil, nil, inventoryError("cloud.Send must have one call in Client.doCloudRequest")
+	}
+
+	return requestMethod, sendCalls[0], nil
+}
+
+func hasSingleClientCloudSend(requestMethod *ast.FuncDecl, sendCalls []*ast.CallExpr) bool {
+	return requestMethod != nil && len(sendCalls) == 1 && len(sendCalls[0].Args) == 6 &&
+		functionBodyContainsCall(requestMethod.Body, sendCalls[0])
+}
+
+func clientRequestReceiver(requestMethod *ast.FuncDecl) (*ast.Ident, error) {
+	if requestMethod.Recv == nil || len(requestMethod.Recv.List) != 1 || len(requestMethod.Recv.List[0].Names) != 1 {
+		return nil, inventoryError("cloud.Send must use the Client method receiver's configured fields")
+	}
+
+	receiver := requestMethod.Recv.List[0].Names[0]
+	if identifierObjectPosition(receiver) == token.NoPos {
+		return nil, inventoryError("cloud.Send receiver binding could not be resolved")
+	}
+
+	return receiver, nil
+}
+
+func validateClientCloudSendReceiver(
+	path string,
+	fileSet *token.FileSet,
+	requestMethod *ast.FuncDecl,
+	sendCall *ast.CallExpr,
+	receiver *ast.Ident,
+) error {
+	receiverPosition := identifierObjectPosition(receiver)
+	receiverAliases := map[token.Pos]bool{receiverPosition: true}
+	transportAliases := make(map[token.Pos]bool)
+	baseURLAliases := make(map[token.Pos]bool)
+	collectClientReceiverAliases(requestMethod.Body, receiverAliases, transportAliases, baseURLAliases)
+
+	if clientReceiverFieldsMutated(requestMethod.Body, receiverAliases, transportAliases, baseURLAliases) {
+		return inventoryError("Client transport or base URL aliases must not be reassigned or mutated before cloud.Send")
+	}
+
+	if !clientCloudSendUsesConfiguredFields(sendCall, receiverAliases, transportAliases, baseURLAliases) {
+		return sourceError(fileSet, path, sendCall.Pos(),
+			"cloud.Send must use the Client receiver's injected HTTPDoer and configured base URL")
+	}
+
+	return nil
+}
+
+func clientCloudSendUsesConfiguredFields(
+	sendCall *ast.CallExpr,
+	receiverAliases, transportAliases, baseURLAliases map[token.Pos]bool,
+) bool {
+	return isClientReceiverFieldSource(sendCall.Args[1], receiverAliases, transportAliases, "httpClient") &&
+		isClientReceiverFieldSource(sendCall.Args[2], receiverAliases, baseURLAliases, "baseURL")
+}
+
+func hasCloudSendCall(file *ast.File) bool {
+	found := false
+
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if ok && isCloudSendCall(file, call) {
+			found = true
+
+			return false
+		}
+
+		return !found
+	})
+
+	return found
+}
+
+func isCloudSendCall(file *ast.File, call *ast.CallExpr) bool {
+	selector, ok := unparen(call.Fun).(*ast.SelectorExpr)
+
+	return ok && selector.Sel.Name == "Send" && importedPath(file, selector.X) == cloudImportPath
+}
+
+func isClientReceiver(function *ast.FuncDecl) bool {
+	if function.Recv == nil || len(function.Recv.List) != 1 {
+		return false
+	}
+
+	typeExpression := unparen(function.Recv.List[0].Type)
+	if pointer, ok := typeExpression.(*ast.StarExpr); ok {
+		typeExpression = unparen(pointer.X)
+	}
+
+	clientType, ok := typeExpression.(*ast.Ident)
+
+	return ok && clientType.Name == "Client"
+}
+
+func functionBodyContainsCall(body *ast.BlockStmt, expected *ast.CallExpr) bool {
+	if body == nil {
+		return false
+	}
+
+	found := false
+
+	ast.Inspect(body, func(node ast.Node) bool {
+		if node != nil && node != expected {
+			if _, nested := node.(*ast.FuncLit); nested {
+				return false
+			}
+		}
+
+		if node == expected {
+			found = true
+
+			return false
+		}
+
+		return !found
+	})
+
+	return found
+}
+
+func collectClientReceiverAliases(
+	body *ast.BlockStmt,
+	receiverAliases, transportAliases, baseURLAliases map[token.Pos]bool,
+) {
+	for {
+		before := len(receiverAliases) + len(transportAliases) + len(baseURLAliases)
+
+		ast.Inspect(body, func(node ast.Node) bool {
+			switch typed := node.(type) {
+			case *ast.ValueSpec:
+				for index, name := range typed.Names {
+					if index < len(typed.Values) {
+						collectClientAlias(name, typed.Values[index], receiverAliases, transportAliases, baseURLAliases)
+					}
+				}
+			case *ast.AssignStmt:
+				for index, target := range typed.Lhs {
+					name, ok := unparen(target).(*ast.Ident)
+					if ok && index < len(typed.Rhs) {
+						collectClientAlias(name, typed.Rhs[index], receiverAliases, transportAliases, baseURLAliases)
+					}
+				}
+			}
+
+			return true
+		})
+
+		if before == len(receiverAliases)+len(transportAliases)+len(baseURLAliases) {
+			return
+		}
+	}
+}
+
+func collectClientAlias(
+	name *ast.Ident,
+	source ast.Expr,
+	receiverAliases, transportAliases, baseURLAliases map[token.Pos]bool,
+) {
+	if name == nil || name.Obj == nil {
+		return
+	}
+
+	position := identifierObjectPosition(name)
+
+	if isClientReceiverAliasSource(source, receiverAliases) {
+		receiverAliases[position] = true
+	}
+
+	if isClientReceiverFieldSource(source, receiverAliases, transportAliases, "httpClient") {
+		transportAliases[position] = true
+	}
+
+	if isClientReceiverFieldSource(source, receiverAliases, baseURLAliases, "baseURL") {
+		baseURLAliases[position] = true
+	}
+}
+
+func isClientReceiverAliasSource(expression ast.Expr, receiverAliases map[token.Pos]bool) bool {
+	identifier, ok := unparen(expression).(*ast.Ident)
+
+	return ok && receiverAliases[identifierObjectPosition(identifier)]
+}
+
+func isClientReceiverFieldSource(
+	expression ast.Expr,
+	receiverAliases, fieldAliases map[token.Pos]bool,
+	fieldName string,
+) bool {
+	expression = unparen(expression)
+	if identifier, ok := expression.(*ast.Ident); ok {
+		return fieldAliases[identifierObjectPosition(identifier)]
+	}
+
+	selector, ok := expression.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != fieldName {
+		return false
+	}
+
+	return isClientReceiverAliasSource(selector.X, receiverAliases)
+}
+
+func clientReceiverFieldsMutated(
+	body *ast.BlockStmt,
+	receiverAliases, transportAliases, baseURLAliases map[token.Pos]bool,
+) bool {
+	mutated := false
+
+	ast.Inspect(body, func(node ast.Node) bool {
+		if node == nil || mutated {
+			return false
+		}
+
+		switch typed := node.(type) {
+		case *ast.AssignStmt:
+			mutated = clientReceiverAssignmentMutates(
+				typed, receiverAliases, transportAliases, baseURLAliases,
+			)
+		case *ast.IncDecStmt:
+			mutated = clientReceiverIncrementMutates(typed, baseURLAliases)
+		}
+
+		return !mutated
+	})
+
+	return mutated
+}
+
+func clientReceiverAssignmentMutates(
+	assignment *ast.AssignStmt,
+	receiverAliases, transportAliases, baseURLAliases map[token.Pos]bool,
+) bool {
+	for index, target := range assignment.Lhs {
+		if clientReceiverAliasAssignmentMutates(
+			index, target, assignment.Rhs, receiverAliases, transportAliases, baseURLAliases,
+		) || receiverConfigFieldMutation(target, receiverAliases) || clientBaseURLAliasFieldMutated(target, baseURLAliases) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func clientReceiverAliasAssignmentMutates(
+	index int,
+	target ast.Expr,
+	right []ast.Expr,
+	receiverAliases, transportAliases, baseURLAliases map[token.Pos]bool,
+) bool {
+	name, isName := unparen(target).(*ast.Ident)
+	if !isName {
+		return false
+	}
+
+	position := identifierObjectPosition(name)
+	if !receiverAliases[position] && !transportAliases[position] && !baseURLAliases[position] {
+		return false
+	}
+
+	return index >= len(right) || !validClientAliasReassignment(
+		right[index], receiverAliases, transportAliases, baseURLAliases, position,
+	)
+}
+
+func clientBaseURLAliasFieldMutated(target ast.Expr, baseURLAliases map[token.Pos]bool) bool {
+	if _, isIdentifier := unparen(target).(*ast.Ident); isIdentifier {
+		return false
+	}
+
+	root := selectorRootIdentifier(target)
+
+	return root != nil && baseURLAliases[identifierObjectPosition(root)]
+}
+
+func clientReceiverIncrementMutates(statement *ast.IncDecStmt, baseURLAliases map[token.Pos]bool) bool {
+	root := selectorRootIdentifier(statement.X)
+
+	return root != nil && baseURLAliases[identifierObjectPosition(root)]
+}
+
+func validClientAliasReassignment(
+	expression ast.Expr,
+	receiverAliases, transportAliases, baseURLAliases map[token.Pos]bool,
+	target token.Pos,
+) bool {
+	return (receiverAliases[target] && isClientReceiverAliasSource(expression, receiverAliases)) ||
+		(transportAliases[target] && isClientReceiverFieldSource(
+			expression, receiverAliases, transportAliases, "httpClient",
+		)) ||
+		(baseURLAliases[target] && isClientReceiverFieldSource(expression, receiverAliases, baseURLAliases, "baseURL"))
+}
+
+func selectorRootIdentifier(expression ast.Expr) *ast.Ident {
+	for {
+		expression = unparen(expression)
+		if dereference, ok := expression.(*ast.StarExpr); ok {
+			expression = dereference.X
+
+			continue
+		}
+
+		selector, ok := expression.(*ast.SelectorExpr)
+		if !ok {
+			break
+		}
+
+		expression = selector.X
+	}
+
+	identifier, _ := unparen(expression).(*ast.Ident)
+
+	return identifier
+}
+
+func receiverConfigFieldMutation(expression ast.Expr, receiverAliases map[token.Pos]bool) bool {
+	current := unparen(expression)
+	hasConfigField := false
+
+	for {
+		selector, ok := current.(*ast.SelectorExpr)
+		if !ok {
+			break
+		}
+
+		if selector.Sel.Name == "httpClient" || selector.Sel.Name == "baseURL" {
+			hasConfigField = true
+		}
+
+		current = unparen(selector.X)
+	}
+
+	if !hasConfigField {
+		return false
+	}
+
+	identifier, ok := current.(*ast.Ident)
+
+	return ok && receiverAliases[identifierObjectPosition(identifier)]
 }
 
 func checkUnregisteredNetworkPrimitives(path string, fileSet *token.FileSet, file *ast.File) error {
@@ -769,7 +1728,7 @@ func checkRequestMetadata(file *ast.File, newRequest, requestURL *ast.FuncDecl) 
 		return inventoryError("generated endpoint path and query key must reach the request URL")
 	}
 
-	if !hasRouteReturned(requestURL) || !hasNoRouteMutations(requestURL) {
+	if !hasRouteReturned(requestURL) || !hasNoRouteMutations(file, requestURL) {
 		return inventoryError("the generated route must be returned unchanged after schema-bound construction")
 	}
 
@@ -946,24 +1905,24 @@ func hasGeneratedPathAssignment(file *ast.File, function *ast.FuncDecl) bool {
 		return false
 	}
 
-	return hasGeneratedPathInEmptyPathBranch(file, function, resultObject)
+	count, ok := generatedPathAssignmentsOnEmptyPath(file, function, resultObject)
+
+	return ok && count > 0
 }
 
-func hasGeneratedPathInEmptyPathBranch(file *ast.File, function *ast.FuncDecl, resultObject token.Pos) bool {
-	found := false
+func generatedPathAssignmentsOnEmptyPath(file *ast.File, function *ast.FuncDecl, resultObject token.Pos) (int, bool) {
+	if function == nil || function.Body == nil {
+		return 0, false
+	}
 
-	ast.Inspect(function.Body, func(node ast.Node) bool {
-		conditional, ok := node.(*ast.IfStmt)
-		if !ok || !isEmptyPathCondition(conditional.Cond, resultObject) {
-			return true
+	for _, statement := range function.Body.List {
+		conditional, ok := statement.(*ast.IfStmt)
+		if ok && isEmptyPathCondition(conditional.Cond, resultObject) {
+			return blockGeneratedPathAssignmentsOnEveryPath(file, conditional.Body, resultObject)
 		}
+	}
 
-		found = found || hasPathAssignmentInBlock(file, conditional.Body, resultObject)
-
-		return true
-	})
-
-	return found
+	return 0, false
 }
 
 func requestURLResultObject(function *ast.FuncDecl) token.Pos {
@@ -1047,15 +2006,18 @@ func hasRouteReturned(function *ast.FuncDecl) bool {
 	return returnCount == 1 && validReturn
 }
 
-func hasNoRouteMutations(function *ast.FuncDecl) bool {
+func hasNoRouteMutations(file *ast.File, function *ast.FuncDecl) bool {
 	resultObject := requestURLResultObject(function)
 	if resultObject == token.NoPos {
 		return false
 	}
 
 	pathAssignments, queryAssignments, valid := routeMutationCounts(function, resultObject)
+	branchAssignments, branchComplete := generatedPathAssignmentsOnEmptyPath(file, function, resultObject)
 
-	return valid && pathAssignments == 1 && queryAssignments == 1
+	hasCompleteRouteAssignments := branchComplete && branchAssignments > 0 && pathAssignments == branchAssignments
+
+	return valid && hasCompleteRouteAssignments && queryAssignments == 1
 }
 
 func routeMutationCounts(function *ast.FuncDecl, resultObject token.Pos) (int, int, bool) {
@@ -1131,30 +2093,65 @@ func isEmptyPathCondition(expression ast.Expr, resultObject token.Pos) bool {
 	return baseOK && identifierObjectPosition(base) == resultObject
 }
 
-func hasPathAssignmentInBlock(file *ast.File, block *ast.BlockStmt, resultObject token.Pos) bool {
-	found := false
+func blockGeneratedPathAssignmentsOnEveryPath(
+	file *ast.File,
+	block *ast.BlockStmt,
+	resultObject token.Pos,
+) (int, bool) {
+	if block == nil {
+		return 0, false
+	}
 
-	ast.Inspect(block, func(node ast.Node) bool {
-		assignment, assignmentFound := node.(*ast.AssignStmt)
-		if !assignmentFound || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
-			return true
+	count := 0
+
+	for _, statement := range block.List {
+		statementCount, guaranteed := statementGeneratedPathAssignments(file, statement, resultObject)
+
+		count += statementCount
+		if guaranteed {
+			return count, true
 		}
+	}
 
-		selector, selectorFound := unparen(assignment.Lhs[0]).(*ast.SelectorExpr)
-		if !selectorFound || selector.Sel.Name != generatedRequestStatusField {
-			return true
+	return count, false
+}
+
+func statementGeneratedPathAssignments(file *ast.File, statement ast.Stmt, resultObject token.Pos) (int, bool) {
+	switch typed := statement.(type) {
+	case *ast.AssignStmt:
+		if assignmentIsGeneratedPath(file, typed, resultObject) {
+			return 1, true
 		}
+	case *ast.BlockStmt:
+		return blockGeneratedPathAssignmentsOnEveryPath(file, typed, resultObject)
+	case *ast.IfStmt:
+		bodyCount, bodyComplete := blockGeneratedPathAssignmentsOnEveryPath(file, typed.Body, resultObject)
 
-		base, ok := unparen(selector.X).(*ast.Ident)
-		if ok && identifierObjectPosition(base) == resultObject &&
-			isGeneratedSelector(file, assignment.Rhs[0], "CloudRequestPath") {
-			found = true
+		elseCount, elseComplete := statementGeneratedPathAssignments(file, typed.Else, resultObject)
+		if bodyComplete && elseComplete {
+			return bodyCount + elseCount, true
 		}
+	case *ast.LabeledStmt:
+		return statementGeneratedPathAssignments(file, typed.Stmt, resultObject)
+	}
 
-		return true
-	})
+	return 0, false
+}
 
-	return found
+func assignmentIsGeneratedPath(file *ast.File, assignment *ast.AssignStmt, resultObject token.Pos) bool {
+	if len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
+		return false
+	}
+
+	selector, selectorFound := unparen(assignment.Lhs[0]).(*ast.SelectorExpr)
+	if !selectorFound || selector.Sel.Name != generatedRequestStatusField {
+		return false
+	}
+
+	base, ok := unparen(selector.X).(*ast.Ident)
+
+	return ok && identifierObjectPosition(base) == resultObject &&
+		isGeneratedSelector(file, assignment.Rhs[0], "CloudRequestPath")
 }
 
 func hasGeneratedTokenQuery(file *ast.File, function *ast.FuncDecl) bool {
@@ -1975,6 +2972,10 @@ func wireMapReturnEscape(
 	file *ast.File,
 	aliases, wireMapTypes map[string]bool,
 ) error {
+	if len(statement.Results) == 0 && hasBareNamedWireMapResult(file, statement, aliases, wireMapTypes) {
+		return sourceError(fileSet, path, statement.Pos(), "query and header maps cannot escape their checked function")
+	}
+
 	for _, result := range statement.Results {
 		if containsWireMapSource(result, file, aliases, wireMapTypes) {
 			return sourceError(fileSet, path, result.Pos(), "query and header maps cannot escape their checked function")
@@ -1982,6 +2983,87 @@ func wireMapReturnEscape(
 	}
 
 	return nil
+}
+
+func hasBareNamedWireMapResult(
+	file *ast.File,
+	statement *ast.ReturnStmt,
+	aliases, wireMapTypes map[string]bool,
+) bool {
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && functionBodyContainsReturn(function.Body, statement) &&
+			functionHasNamedWireMapResult(file, function.Type, aliases, wireMapTypes) {
+			return true
+		}
+	}
+
+	found := false
+
+	ast.Inspect(file, func(node ast.Node) bool {
+		function, ok := node.(*ast.FuncLit)
+		if !ok || !functionBodyContainsReturn(function.Body, statement) {
+			return true
+		}
+
+		found = functionHasNamedWireMapResult(file, function.Type, aliases, wireMapTypes)
+
+		return !found
+	})
+
+	return found
+}
+
+func functionBodyContainsReturn(body *ast.BlockStmt, statement *ast.ReturnStmt) bool {
+	if body == nil {
+		return false
+	}
+
+	found := false
+
+	ast.Inspect(body, func(node ast.Node) bool {
+		if node == nil || found {
+			return false
+		}
+
+		if node == statement {
+			found = true
+
+			return false
+		}
+
+		if _, nested := node.(*ast.FuncLit); nested {
+			return false
+		}
+
+		return true
+	})
+
+	return found
+}
+
+func functionHasNamedWireMapResult(
+	file *ast.File,
+	functionType *ast.FuncType,
+	aliases, wireMapTypes map[string]bool,
+) bool {
+	if functionType == nil || functionType.Results == nil {
+		return false
+	}
+
+	for _, result := range functionType.Results.List {
+		if !isWireMapType(file, result.Type, wireMapTypes) {
+			continue
+		}
+
+		for _, name := range result.Names {
+			if aliases[identifierKey(name)] {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func wireMapCompositeEscape(
@@ -2212,19 +3294,27 @@ func isWireMapSource(expression ast.Expr, file *ast.File, aliases, wireMapTypes 
 }
 
 func isWireMapCallSource(file *ast.File, call *ast.CallExpr, aliases, wireMapTypes map[string]bool) bool {
-	selector, selectorOK := unparen(call.Fun).(*ast.SelectorExpr)
-	if selectorOK && selector.Sel.Name == "ParseQuery" && importedPath(file, selector.X) == netURLImportPath {
-		return true
+	return isWireMapReaderCall(file, call) || isWireMapBuiltinConstruction(file, call, wireMapTypes) ||
+		isWireMapHelperResult(file, call, wireMapTypes) || isWireMapConversion(file, call, aliases, wireMapTypes)
+}
+
+func isWireMapReaderCall(file *ast.File, call *ast.CallExpr) bool {
+	selector, ok := unparen(call.Fun).(*ast.SelectorExpr)
+	if !ok {
+		return false
 	}
 
-	if selectorOK && selector.Sel.Name == "Query" && hasImportPath(file, netURLImportPath) {
-		return true
-	}
+	return (selector.Sel.Name == "ParseQuery" && importedPath(file, selector.X) == netURLImportPath) ||
+		(selector.Sel.Name == "Query" && hasImportPath(file, netURLImportPath))
+}
 
-	if isWireMapBuiltinConstruction(file, call, wireMapTypes) {
-		return true
-	}
+func isWireMapHelperResult(file *ast.File, call *ast.CallExpr, wireMapTypes map[string]bool) bool {
+	resultType, hasResult := callableResultType(file, call.Fun, make(map[token.Pos]bool))
 
+	return hasResult && isWireMapType(file, resultType, wireMapTypes)
+}
+
+func isWireMapConversion(file *ast.File, call *ast.CallExpr, aliases, wireMapTypes map[string]bool) bool {
 	return isWireMapType(file, call.Fun, wireMapTypes) && len(call.Args) == 1 &&
 		isWireMapSource(call.Args[0], file, aliases, wireMapTypes)
 }

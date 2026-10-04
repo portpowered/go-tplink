@@ -14,6 +14,8 @@ import (
 	"testing"
 )
 
+const loginCloudRequestModel = "LoginCloudRequest"
+
 func TestProductionWireInventoryPasses(t *testing.T) {
 	t.Parallel()
 
@@ -325,7 +327,7 @@ func build() { _ = dependencymodels.Device{IsSameRegion: func() *bool { value :=
 			t.Parallel()
 
 			generatedTypes := map[string]bool{
-				"LoginCloudRequest": true, "SystemRebootCommand": true,
+				loginCloudRequestModel: true, "SystemRebootCommand": true,
 				"SystemSetDevAliasCommand": true, "Device": true,
 			}
 
@@ -361,10 +363,79 @@ func build(alias string, delay int) {
 	}
 }
 
+func TestGeneratedScalarHelperResultsRejectFixedValues(t *testing.T) {
+	t.Parallel()
+
+	fixtures := map[string]string{
+		"named result with bare return": `package fixture
+import "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func fixed() (result dependencymodels.LoginCloudRequestMethod) { result = "invented"; return }
+func build() { _ = dependencymodels.LoginCloudRequest{Method: fixed()} }
+`,
+		"chained named result": `package fixture
+import "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func fixed() (result dependencymodels.LoginCloudRequestMethod) { result = "invented"; return }
+func wrapped() (result dependencymodels.LoginCloudRequestMethod) { result = fixed(); return }
+func build() { _ = dependencymodels.LoginCloudRequest{Method: wrapped()} }
+`,
+		"function value alias": `package fixture
+import "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func fixed() (result dependencymodels.LoginCloudRequestMethod) { result = "invented"; return }
+func build() { helper := fixed; _ = dependencymodels.LoginCloudRequest{Method: helper()} }
+`,
+		"returned callback": `package fixture
+import "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func fixed() (result dependencymodels.LoginCloudRequestMethod) { result = "invented"; return }
+func callback() func() dependencymodels.LoginCloudRequestMethod { return fixed }
+func build() { _ = dependencymodels.LoginCloudRequest{Method: callback()()} }
+`,
+		"returned callback through named result": `package fixture
+import "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func fixed() (result dependencymodels.LoginCloudRequestMethod) { result = "invented"; return }
+func callback() (result func() dependencymodels.LoginCloudRequestMethod) { result = fixed; return }
+func build() { _ = dependencymodels.LoginCloudRequest{Method: callback()()} }
+`,
+	}
+
+	for name, source := range fixtures {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			err := checkSource(source, nil, nil, map[string]bool{loginCloudRequestModel: true})
+			if err == nil || !strings.Contains(err.Error(), "fixed scalar") {
+				t.Fatalf("checkSource() error = %v, want fixed helper result rejection", err)
+			}
+		})
+	}
+}
+
+func TestGeneratedScalarCallerValueHelpersRemainAllowed(t *testing.T) {
+	t.Parallel()
+
+	const source = `package fixture
+import "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func passthrough(value dependencymodels.LoginCloudRequestMethod) dependencymodels.LoginCloudRequestMethod {
+  return value
+}
+func callback(value dependencymodels.LoginCloudRequestMethod) func() dependencymodels.LoginCloudRequestMethod {
+  return func() dependencymodels.LoginCloudRequestMethod { return value }
+}
+func build(value dependencymodels.LoginCloudRequestMethod) {
+  _ = dependencymodels.LoginCloudRequest{Method: passthrough(value)}
+  _ = dependencymodels.LoginCloudRequest{Method: callback(value)()}
+}
+`
+
+	err := checkSource(source, nil, nil, map[string]bool{loginCloudRequestModel: true})
+	if err != nil {
+		t.Fatalf("checkSource() rejected caller-provided helper values: %v", err)
+	}
+}
+
 func TestGeneratedQueryAndHeaderKeyNegatives(t *testing.T) {
 	t.Parallel()
 
-	assertRejectedSourceFixtures(t, queryAndHeaderKeyNegativeFixtures(), "query and header")
+	assertRejectedSourceFixtures(t, queryAndHeaderKeyNegativeFixtures())
 }
 
 func queryAndHeaderKeyNegativeFixtures() map[string]string {
@@ -423,8 +494,10 @@ func build() { _ = http.Header{"Cookie": []string{"value"}} }
 	}
 }
 
-func assertRejectedSourceFixtures(t *testing.T, fixtures map[string]string, message string) {
+func assertRejectedSourceFixtures(t *testing.T, fixtures map[string]string) {
 	t.Helper()
+
+	const message = "query and header"
 
 	for name, source := range fixtures {
 		t.Run(name, func(t *testing.T) {
@@ -452,10 +525,31 @@ func build(raw string) { query := url.Values(raw); _ = query }
 	}
 }
 
+func TestCallerProvidedQueryMapMayPassThroughNamedResult(t *testing.T) {
+	t.Parallel()
+
+	const source = `package fixture
+import "net/url"
+func passThrough(input url.Values) (result url.Values) { result = input; return }
+func build(input url.Values) { _ = passThrough(input) }
+`
+
+	err := checkSource(source, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("checkSource() rejected a caller-provided query map: %v", err)
+	}
+}
+
 func TestSchemaKeyedMapsRejectEscapesAndAggregateStorage(t *testing.T) {
 	t.Parallel()
 
-	fixtures := map[string]string{
+	assertRejectedSourceFixtures(t, schemaKeyedMapEscapeFixtures())
+	assertRejectedSourceFixtures(t, schemaKeyedMapAggregateFixtures())
+	assertRejectedSourceFixtures(t, schemaKeyedMapReaderFixtures())
+}
+
+func schemaKeyedMapEscapeFixtures() map[string]string {
+	return map[string]string{
 		"helper argument": `package fixture
 import "net/url"
 func build() { query := make(url.Values); mutate(query) }
@@ -468,6 +562,38 @@ func build() { query := make(url.Values); mutate(struct{ Values url.Values }{que
 import "net/url"
 func build() url.Values { query := make(url.Values); return query }
 `,
+		"named result helper escape": `package fixture
+import (
+  "net/url"
+  "github.com/portpowered/go-tplink/pkg/dependencymodels"
+)
+func generated() (result url.Values) {
+  result = make(url.Values)
+  result.Set(dependencymodels.TokenQueryKey, "token")
+  return
+}
+func mutate(values url.Values) { values.Set("unregistered", "x") }
+func build() { mutate(generated()) }
+`,
+		"chained named result callback escape": `package fixture
+import (
+  "net/url"
+  "github.com/portpowered/go-tplink/pkg/dependencymodels"
+)
+func generated() (result url.Values) {
+  result = make(url.Values)
+  result.Set(dependencymodels.TokenQueryKey, "token")
+  return
+}
+func callback() func() url.Values { return generated }
+func mutate(values url.Values) { values.Set("unregistered", "x") }
+func build() { helper := callback(); mutate(helper()) }
+`,
+	}
+}
+
+func schemaKeyedMapAggregateFixtures() map[string]string {
+	return map[string]string{
 		"struct storage": `package fixture
 import "net/url"
 func build() { query := make(url.Values); holder := struct{ Values url.Values }{query}; _ = holder }
@@ -493,6 +619,11 @@ func build(request *http.Request) { mutate(request.Header) }
 import "net/http"
 func build(request *http.Request) { headers := (http.Header)(request.Header); mutate(headers) }
 `,
+	}
+}
+
+func schemaKeyedMapReaderFixtures() map[string]string {
+	return map[string]string{
 		"url query raw key": `package fixture
 import "net/url"
 func build(parsed *url.URL) { query := parsed.Query(); query.Set("raw", "value") }
@@ -501,16 +632,6 @@ func build(parsed *url.URL) { query := parsed.Query(); query.Set("raw", "value")
 import "net/url"
 func build(raw string) { query, _ := url.ParseQuery(raw); query.Set("raw", "value") }
 `,
-	}
-	for name, source := range fixtures {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			err := checkSource(source, nil, nil, nil)
-			if err == nil || !strings.Contains(err.Error(), "query and header") {
-				t.Fatalf("checkSource() error = %v, want query/header escape or key rejection", err)
-			}
-		})
 	}
 }
 
@@ -667,6 +788,14 @@ func endpointRouteDriftFixtures() map[string][2]string {
 			"result.Path = dependencymodels.CloudRequestPath",
 			`result.Path = "/v2"`,
 		},
+		"token-nil path skip": {
+			"result.Path = dependencymodels.CloudRequestPath",
+			"if token != nil { result.Path = dependencymodels.CloudRequestPath }",
+		},
+		"empty-path branch skipped when token is nil": {
+			"if result.Path == \"\" {\n\t\tresult.Path = dependencymodels.CloudRequestPath\n\t}",
+			"if token != nil {\n\t\tif result.Path == \"\" { result.Path = dependencymodels.CloudRequestPath }\n\t}",
+		},
 		"appended route path": {
 			"requestURL.String(),",
 			`requestURL.String() + "/extra",`,
@@ -703,6 +832,39 @@ func endpointRouteDriftFixtures() map[string][2]string {
 			"\tresult := *baseURL",
 			"\turl := fakeURL{}\n\tresult := *baseURL",
 		},
+	}
+}
+
+func TestHTTPEndpointInventoryAcceptsBranchCompleteRouteAssignment(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("..", "..", "pkg", "dependencies", "cloud", "cloud.go")
+	//nolint:gosec // Test reads a fixed repository source fixture for route control-flow checks.
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const original = "if result.Path == \"\" {\n\t\tresult.Path = dependencymodels.CloudRequestPath\n\t}"
+
+	complete := strings.Join([]string{
+		`if result.Path == "" {`,
+		"\tif token == nil {",
+		"\t\tresult.Path = dependencymodels.CloudRequestPath",
+		"\t} else {",
+		"\t\tresult.Path = dependencymodels.CloudRequestPath",
+		"\t}",
+		"}",
+	}, "\n")
+
+	branchComplete := strings.Replace(string(source), original, complete, 1)
+	if branchComplete == string(source) {
+		t.Fatal("test fixture did not find the generated route assignment")
+	}
+
+	err = checkEndpointSource(path, []byte(branchComplete))
+	if err != nil {
+		t.Fatalf("checkEndpointSource() rejected branch-complete generated route assignment: %v", err)
 	}
 }
 
@@ -751,6 +913,182 @@ func TestHTTPEndpointInventoryAcceptsAliasedImports(t *testing.T) {
 	if err != nil {
 		t.Fatalf("checkEndpointSource() rejected exact aliased imports: %v", err)
 	}
+}
+
+func TestClientCloudSendUsesConfiguredReceiverFields(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("..", "..", "pkg", "tplink", "client.go")
+	//nolint:gosec // Test reads a fixed SDK source fixture for transport provenance checks.
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertClientCloudSendSourceAccepted(t, path, string(source))
+
+	const original = "response, err := cloud.Send(ctx, client.httpClient, client.baseURL, operation, cloudRequest, token)"
+
+	fixtures := map[string]string{
+		"default transport": "response, err := cloud.Send(ctx, http.DefaultClient, " +
+			"client.baseURL, operation, cloudRequest, token)",
+		"unconfigured authority": "response, err := cloud.Send(ctx, client.httpClient, " +
+			"&url.URL{Scheme: \"https\", Host: \"attacker.invalid\"}, operation, cloudRequest, token)",
+		"base URL alias mutation": "baseURL := client.baseURL\n\tbaseURL.Host = \"attacker.invalid\"\n\t" +
+			"response, err := cloud.Send(ctx, client.httpClient, baseURL, operation, cloudRequest, token)",
+		"transport alias mutation": "transport := client.httpClient\n\ttransport = http.DefaultClient\n\t" +
+			"response, err := cloud.Send(ctx, transport, client.baseURL, operation, cloudRequest, token)",
+	}
+
+	for name, replacement := range fixtures {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			mutated := strings.Replace(string(source), original, replacement, 1)
+			if mutated == string(source) {
+				t.Fatal("test fixture did not find the checked cloud.Send call")
+			}
+
+			err := checkClientCloudSendSource(path, mutated)
+			if err == nil {
+				t.Fatal("checkClientCloudSendCallSite() accepted a different transport or authority")
+			}
+		})
+	}
+}
+
+func TestClientCloudSendAcceptsUnmodifiedReceiverAliases(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("..", "..", "pkg", "tplink", "client.go")
+	//nolint:gosec // Test reads a fixed SDK source fixture for transport provenance checks.
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		original = "response, err := cloud.Send(ctx, client.httpClient, client.baseURL, operation, cloudRequest, token)"
+		aliased  = "transport := client.httpClient\n\tbaseURL := client.baseURL\n\t" +
+			"response, err := cloud.Send(ctx, transport, baseURL, operation, cloudRequest, token)"
+	)
+
+	mutated := strings.Replace(string(source), original, aliased, 1)
+	if mutated == string(source) {
+		t.Fatal("test fixture did not find the checked cloud.Send call")
+	}
+
+	assertClientCloudSendSourceAccepted(t, path, mutated)
+}
+
+func TestProductionClientInventoryRejectsTransportAndAuthoritySubstitution(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join("..", "..")
+	path := filepath.Join(root, "pkg", "tplink", "client.go")
+	//nolint:gosec // Test reads a fixed SDK source fixture for production gate verification.
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wireValues, generatedMaps, err := readGeneratedInventory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	generatedTypes, err := readGeneratedModelTypes(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fixtures := productionClientSubstitutionFixtures(string(source))
+
+	for name, mutated := range fixtures {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if mutated == string(source) {
+				t.Fatal("test fixture did not find the cloud.Send call")
+			}
+
+			productionPath := writeProductionClientFixture(t, source)
+
+			uses := make(map[string]bool)
+
+			err := checkProductionFile(productionPath, generatedMaps, wireValues, generatedTypes, uses)
+			if err != nil {
+				t.Fatalf("checkProductionFile() rejected production baseline: %v", err)
+			}
+
+			err = os.WriteFile(productionPath, []byte(mutated), 0o600)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			err = checkProductionFile(productionPath, generatedMaps, wireValues, generatedTypes, uses)
+			if err == nil {
+				t.Fatal("checkProductionFile() accepted an unconfigured cloud transport or authority")
+			}
+		})
+	}
+}
+
+func productionClientSubstitutionFixtures(source string) map[string]string {
+	return map[string]string{
+		"default transport": strings.Replace(
+			source,
+			"cloud.Send(ctx, client.httpClient, client.baseURL, operation, cloudRequest, token)",
+			"cloud.Send(ctx, http.DefaultClient, client.baseURL, operation, cloudRequest, token)",
+			1,
+		),
+		"unconfigured authority": strings.Replace(
+			source,
+			"cloud.Send(ctx, client.httpClient, client.baseURL, operation, cloudRequest, token)",
+			"cloud.Send(ctx, client.httpClient, &url.URL{Scheme: \"https\", Host: \"attacker.invalid\"}, "+
+				"operation, cloudRequest, token)",
+			1,
+		),
+	}
+}
+
+func writeProductionClientFixture(t *testing.T, source []byte) string {
+	t.Helper()
+
+	productionPath := filepath.Join(t.TempDir(), "pkg", "tplink", "client.go")
+
+	err := os.MkdirAll(filepath.Dir(productionPath), 0o700)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//nolint:gosec // The path is confined to a fixture directory created by t.TempDir.
+	err = os.WriteFile(productionPath, source, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return productionPath
+}
+
+func assertClientCloudSendSourceAccepted(t *testing.T, path, source string) {
+	t.Helper()
+
+	err := checkClientCloudSendSource(path, source)
+	if err != nil {
+		t.Fatalf("checkClientCloudSendCallSite() rejected configured receiver fields: %v", err)
+	}
+}
+
+func checkClientCloudSendSource(path, source string) error {
+	fileSet := token.NewFileSet()
+
+	file, err := parser.ParseFile(fileSet, path, []byte(source), parser.ParseComments)
+	if err != nil {
+		return fmt.Errorf("parse Client transport fixture: %w", err)
+	}
+
+	return checkClientCloudSendCallSite(path, fileSet, file)
 }
 
 func TestUnregisteredNetworkPrimitiveGate(t *testing.T) {

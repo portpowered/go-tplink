@@ -106,12 +106,21 @@ func checkRepository(root string) error {
 		return err
 	}
 
-	err = checkEndpointCallSite(root)
+	err = checkNetworkCallSites(root, paths)
 	if err != nil {
 		return err
 	}
 
 	return requireGeneratedUses(uses)
+}
+
+func checkNetworkCallSites(root string, paths []string) error {
+	err := checkClientCloudSendLocations(root, paths)
+	if err != nil {
+		return err
+	}
+
+	return checkEndpointCallSite(root)
 }
 
 func readGeneratedInventory(root string) (map[string]bool, map[string]bool, error) {
@@ -221,7 +230,48 @@ func checkProductionFile(path string, generatedMaps, wireValues, generatedTypes,
 		}
 	}
 
+	if strings.HasSuffix(filepath.ToSlash(path), "pkg/tplink/client.go") || hasCloudSendCall(file) {
+		err := checkClientCloudSendCallSite(path, fileSet, file)
+		if err != nil {
+			return err
+		}
+	}
+
 	return checkFile(path, fileSet, file, generatedMaps, wireValues, generatedTypes, uses)
+}
+
+func checkClientCloudSendLocations(root string, paths []string) error {
+	expectedPath := filepath.Clean(filepath.Join(root, "pkg", "tplink", "client.go"))
+	callCount := 0
+
+	for _, path := range paths {
+		//nolint:gosec // Source paths are restricted to the registered production package list.
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read production file while locating cloud.Send: %w", err)
+		}
+
+		file, err := parser.ParseFile(token.NewFileSet(), path, source, 0)
+		if err != nil {
+			return fmt.Errorf("parse production file while locating cloud.Send: %w", err)
+		}
+
+		if !hasCloudSendCall(file) {
+			continue
+		}
+
+		if filepath.Clean(path) != expectedPath {
+			return inventoryError("cloud.Send call sites must remain in pkg/tplink/client.go")
+		}
+
+		callCount++
+	}
+
+	if callCount != 1 {
+		return inventoryError("the production inventory requires exactly one cloud.Send call in pkg/tplink/client.go")
+	}
+
+	return nil
 }
 
 func isRegisteredGeneratedPath(path string) bool {
