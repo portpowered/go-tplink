@@ -10,6 +10,7 @@ on:
       - "docs/**"
       - "Makefile"
       - "tools/render_replay_coverage.py"
+      - "tools/test_render_replay_coverage.py"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -46,7 +47,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Generate replay coverage report
-        run: python tools/render_replay_coverage.py --site-dir site
+        run: |
+          python -m unittest discover -s tools -p test_render_replay_coverage.py
+          python tools/render_replay_coverage.py --site-dir site
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:

@@ -26,6 +26,7 @@ def coverage_profile(
     totals: dict[str, list[int]] = defaultdict(lambda: [0, 0])
     generated_files: set[str] = set()
     filtered_lines: list[str] = []
+    blocks: dict[str, tuple[str, int, bool, bool]] = {}
 
     for line in source.read_text(encoding="utf-8").splitlines():
         if line.startswith("mode:"):
@@ -44,15 +45,28 @@ def coverage_profile(
         if package is None:
             continue
 
-        if filename.endswith(".gen.go"):
-            generated_files.add(filename)
-            continue
-
+        generated = filename.endswith(".gen.go")
         statements = int(fields[1])
         executions = int(fields[2])
-        totals[package][0] += statements if executions > 0 else 0
+        if statements < 0 or executions < 0:
+            raise RuntimeError(f"negative Go coverage profile count: {line!r}")
+        key = fields[0]
+        covered = executions > 0
+        previous = blocks.get(key)
+        if previous is not None:
+            previous_package, previous_statements, previous_generated, previous_covered = previous
+            if (package, statements, generated) != (previous_package, previous_statements, previous_generated):
+                raise RuntimeError(f"conflicting duplicate coverage record: {key!r}")
+            covered = covered or previous_covered
+        blocks[key] = (package, statements, generated, covered)
+
+    for key, (package, statements, generated, covered) in blocks.items():
+        if generated:
+            generated_files.add(key.split(":", maxsplit=1)[0].replace("\\", "/"))
+            continue
+        totals[package][0] += statements if covered else 0
         totals[package][1] += statements
-        filtered_lines.append(line)
+        filtered_lines.append(f"{key} {statements} {int(covered)}")
 
     missing = set(PRODUCTION_PACKAGES) - totals.keys()
     if missing:
