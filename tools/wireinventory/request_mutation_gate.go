@@ -8,10 +8,12 @@ import (
 const requestMutationMessage = "constructed HTTP request must reach the injected Do without mutation or escape"
 
 type requestMutationAliases struct {
-	requests map[token.Pos]bool
-	urls     map[token.Pos]bool
-	headers  map[token.Pos]bool
-	bodies   map[token.Pos]bool
+	requests       map[token.Pos]bool
+	urls           map[token.Pos]bool
+	headers        map[token.Pos]bool
+	bodies         map[token.Pos]bool
+	buffers        map[token.Pos]bool
+	bufferLiveFrom map[token.Pos]token.Pos
 }
 
 func hasNoSendRequestMutations(file *ast.File, function *ast.FuncDecl) bool {
@@ -109,7 +111,7 @@ func requestMutationNodeViolation(
 	case *ast.AssignStmt:
 		return requestAssignmentMutates(file, typed, parameters, requestObjects, aliases)
 	case *ast.IncDecStmt:
-		return isRequestMutationTarget(typed.X, aliases)
+		return isRequestMutationTargetAt(typed.X, aliases, typed.Pos())
 	case *ast.CallExpr:
 		return requestCallEscapesWithAllowances(typed, function, aliases, allowedCalls)
 	case *ast.SelectorExpr:
@@ -128,11 +130,11 @@ func requestMutationValueNodeViolation(
 ) bool {
 	switch typed := node.(type) {
 	case *ast.CompositeLit:
-		return requestValueEscapes(typed, aliases)
+		return requestValueEscapesAt(typed, aliases, typed.Pos())
 	case *ast.ReturnStmt:
 		return requestReturnEscapes(function, typed, aliases, allowContentTypeSetter)
 	case *ast.UnaryExpr:
-		return typed.Op == token.AND && requestValueEscapes(typed.X, aliases)
+		return typed.Op == token.AND && requestValueEscapesAt(typed.X, aliases, typed.Pos())
 	case *ast.ValueSpec:
 		return requestPackageValueEscapes(file, typed, aliases)
 	default:
@@ -146,14 +148,18 @@ func collectRequestMutationAliases(
 	requestObjects map[token.Pos]bool,
 ) requestMutationAliases {
 	aliases := requestMutationAliases{
-		requests: clonePositionSet(requestObjects),
-		urls:     make(map[token.Pos]bool),
-		headers:  make(map[token.Pos]bool),
-		bodies:   make(map[token.Pos]bool),
+		requests:       clonePositionSet(requestObjects),
+		urls:           make(map[token.Pos]bool),
+		headers:        make(map[token.Pos]bool),
+		bodies:         make(map[token.Pos]bool),
+		buffers:        make(map[token.Pos]bool),
+		bufferLiveFrom: make(map[token.Pos]token.Pos),
 	}
+	collectConstructedRequestBodyBuffers(file, function, requestObjects, aliases)
 
 	for {
-		before := len(aliases.requests) + len(aliases.urls) + len(aliases.headers) + len(aliases.bodies)
+		before := len(aliases.requests) + len(aliases.urls) + len(aliases.headers) +
+			len(aliases.bodies) + len(aliases.buffers)
 
 		ast.Inspect(function.Body, func(node ast.Node) bool {
 			switch typed := node.(type) {
@@ -166,7 +172,8 @@ func collectRequestMutationAliases(
 			return true
 		})
 
-		after := len(aliases.requests) + len(aliases.urls) + len(aliases.headers) + len(aliases.bodies)
+		after := len(aliases.requests) + len(aliases.urls) + len(aliases.headers) +
+			len(aliases.bodies) + len(aliases.buffers)
 		if before == after {
 			return aliases
 		}
@@ -208,7 +215,244 @@ func addRequestAlias(position token.Pos, expression ast.Expr, file *ast.File, al
 		aliases.headers[position] = true
 	case requestBodyAliasSource(expression, aliases):
 		aliases.bodies[position] = true
+	case requestBufferAliasSource(expression, aliases):
+		if liveFrom, found := requestBufferLiveFrom(expression, aliases); found {
+			aliases.buffers[position] = true
+			aliases.bufferLiveFrom[position] = liveFrom
+		}
 	}
+}
+
+func collectConstructedRequestBodyBuffers(
+	file *ast.File,
+	function *ast.FuncDecl,
+	requestObjects map[token.Pos]bool,
+	aliases requestMutationAliases,
+) {
+	if function == nil || function.Body == nil {
+		return
+	}
+
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		assignment, isAssignment := node.(*ast.AssignStmt)
+		if isAssignment {
+			collectConstructedRequestBodyBufferAssignment(file, function, requestObjects, aliases, assignment)
+		}
+
+		return true
+	})
+}
+
+func collectConstructedRequestBodyBufferAssignment(
+	file *ast.File,
+	function *ast.FuncDecl,
+	requestObjects map[token.Pos]bool,
+	aliases requestMutationAliases,
+	assignment *ast.AssignStmt,
+) {
+	if len(assignment.Rhs) != 1 || len(assignment.Lhs) < 1 {
+		return
+	}
+
+	request, isIdentifier := unparen(assignment.Lhs[0]).(*ast.Ident)
+	if !isIdentifier || !requestObjects[identifierObjectPosition(request)] {
+		return
+	}
+
+	constructor, isCall := unparen(assignment.Rhs[0]).(*ast.CallExpr)
+	if !isCall || !isHTTPNewRequestCall(file, constructor) {
+		return
+	}
+
+	body, found := httpRequestBodyArgument(constructor)
+	if !found {
+		return
+	}
+
+	registerRequestBodyBufferAliases(file, function, aliases, constructor, body)
+}
+
+func registerRequestBodyBufferAliases(
+	file *ast.File,
+	function *ast.FuncDecl,
+	aliases requestMutationAliases,
+	constructor *ast.CallExpr,
+	body ast.Expr,
+) {
+	for position := range requestBodyBufferIdentifiers(file, function, body, make(map[token.Pos]bool)) {
+		aliases.buffers[position] = true
+		if existing, found := aliases.bufferLiveFrom[position]; !found || constructor.End() < existing {
+			aliases.bufferLiveFrom[position] = constructor.End()
+		}
+	}
+}
+
+func httpRequestBodyArgument(constructor *ast.CallExpr) (ast.Expr, bool) {
+	switch len(constructor.Args) {
+	case requestArgumentCount:
+		return constructor.Args[requestBodyArgumentIndex], true
+	case requestArgumentCountWithoutContext:
+		return constructor.Args[2], true
+	default:
+		return nil, false
+	}
+}
+
+const requestBodyArgumentIndex = 3
+const requestArgumentCountWithoutContext = 3
+
+func requestBodyBufferIdentifiers(
+	file *ast.File,
+	function *ast.FuncDecl,
+	expression ast.Expr,
+	visiting map[token.Pos]bool,
+) map[token.Pos]bool {
+	identifiers := make(map[token.Pos]bool)
+	expression = unparen(expression)
+
+	switch typed := expression.(type) {
+	case *ast.CallExpr:
+		return requestBodyCallBufferIdentifiers(file, function, typed, visiting)
+	case *ast.Ident:
+		return requestBodyIdentifierBufferIdentifiers(file, function, typed, visiting)
+	case *ast.UnaryExpr, *ast.StarExpr:
+		for nested := range requestBodyBufferIdentifiers(file, function, expressionOperand(typed), visiting) {
+			identifiers[nested] = true
+		}
+	}
+
+	return identifiers
+}
+
+func requestBodyCallBufferIdentifiers(
+	file *ast.File,
+	function *ast.FuncDecl,
+	call *ast.CallExpr,
+	visiting map[token.Pos]bool,
+) map[token.Pos]bool {
+	identifiers := make(map[token.Pos]bool)
+	if !isBytesBodyReader(file, call) || len(call.Args) != 1 {
+		return identifiers
+	}
+
+	ast.Inspect(call.Args[0], func(node ast.Node) bool {
+		identifier, isIdentifier := node.(*ast.Ident)
+		if !isIdentifier || identifier.Obj == nil {
+			return true
+		}
+
+		for position := range requestBodyIdentifierBufferIdentifiers(file, function, identifier, visiting) {
+			identifiers[position] = true
+		}
+
+		return true
+	})
+
+	return identifiers
+}
+
+func requestBodyIdentifierBufferIdentifiers(
+	file *ast.File,
+	function *ast.FuncDecl,
+	identifier *ast.Ident,
+	visiting map[token.Pos]bool,
+) map[token.Pos]bool {
+	identifiers := make(map[token.Pos]bool)
+
+	position := identifierObjectPosition(identifier)
+	if position == token.NoPos || visiting[position] {
+		return identifiers
+	}
+
+	visiting[position] = true
+	defer delete(visiting, position)
+
+	identifiers[position] = true
+
+	for _, source := range requestIdentifierAssignments(function, position) {
+		for nested := range requestBodyBufferIdentifiers(file, function, source, visiting) {
+			identifiers[nested] = true
+		}
+	}
+
+	return identifiers
+}
+
+func requestIdentifierAssignments(function *ast.FuncDecl, position token.Pos) []ast.Expr {
+	var values []ast.Expr
+	if function == nil || function.Body == nil {
+		return values
+	}
+
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		switch typed := node.(type) {
+		case *ast.ValueSpec:
+			values = append(values, requestValueSpecAssignments(typed, position)...)
+		case *ast.AssignStmt:
+			values = append(values, requestAssignStmtAssignments(typed, position)...)
+		}
+
+		return true
+	})
+
+	return values
+}
+
+func requestValueSpecAssignments(value *ast.ValueSpec, position token.Pos) []ast.Expr {
+	var values []ast.Expr
+
+	for index, name := range value.Names {
+		if identifierObjectPosition(name) == position && index < len(value.Values) {
+			values = append(values, value.Values[index])
+		}
+	}
+
+	return values
+}
+
+func requestAssignStmtAssignments(assignment *ast.AssignStmt, position token.Pos) []ast.Expr {
+	var values []ast.Expr
+
+	for index, target := range assignment.Lhs {
+		name, isIdentifier := unparen(target).(*ast.Ident)
+		if isIdentifier && identifierObjectPosition(name) == position && index < len(assignment.Rhs) {
+			values = append(values, assignment.Rhs[index])
+		}
+	}
+
+	return values
+}
+
+func isBytesBodyReader(file *ast.File, call *ast.CallExpr) bool {
+	selector, ok := unparen(call.Fun).(*ast.SelectorExpr)
+	if !ok || importedPath(file, selector.X) != "bytes" {
+		return false
+	}
+
+	return selector.Sel.Name == "NewReader" || selector.Sel.Name == "NewBuffer"
+}
+
+func requestBufferLiveFrom(expression ast.Expr, aliases requestMutationAliases) (token.Pos, bool) {
+	expression = unparen(expression)
+	switch typed := expression.(type) {
+	case *ast.Ident:
+		position := identifierObjectPosition(typed)
+		liveFrom, found := aliases.bufferLiveFrom[position]
+
+		return liveFrom, found
+	case *ast.SliceExpr:
+		return requestBufferLiveFrom(typed.X, aliases)
+	case *ast.UnaryExpr, *ast.StarExpr:
+		return requestBufferLiveFrom(expressionOperand(typed), aliases)
+	}
+
+	return token.NoPos, false
+}
+
+func requestBufferAliasSource(expression ast.Expr, aliases requestMutationAliases) bool {
+	_, found := requestBufferLiveFrom(expression, aliases)
+
+	return found
 }
 
 func requestAliasSource(expression ast.Expr, requests map[token.Pos]bool) bool {
@@ -289,7 +533,7 @@ func requestAssignmentMutates(
 	}
 
 	for index, target := range assignment.Lhs {
-		if identifier, ok := unparen(target).(*ast.Ident); ok && isRequestAlias(identifier, aliases) {
+		if identifier, ok := unparen(target).(*ast.Ident); ok && isRequestAliasAt(identifier, aliases, assignment.Pos()) {
 			if index < len(assignment.Rhs) && isNewRequestAliasBinding(
 				file, assignment, identifier, assignment.Rhs[index], aliases,
 			) {
@@ -299,7 +543,7 @@ func requestAssignmentMutates(
 			return true
 		}
 
-		if isRequestMutationTarget(target, aliases) {
+		if isRequestMutationTargetAt(target, aliases, assignment.Pos()) {
 			return true
 		}
 	}
@@ -343,24 +587,43 @@ func isNewRequestAliasBinding(
 	return requestAliasSource(expression, aliases.requests) ||
 		requestURLAliasSource(expression, aliases) ||
 		requestHeaderAliasSource(expression, file, aliases) ||
-		requestBodyAliasSource(expression, aliases)
+		requestBodyAliasSource(expression, aliases) ||
+		requestBufferAliasSource(expression, aliases)
 }
 
-func isRequestAlias(identifier *ast.Ident, aliases requestMutationAliases) bool {
-	position := identifierObjectPosition(identifier)
+func isRequestAliasAt(identifier *ast.Ident, aliases requestMutationAliases, position token.Pos) bool {
+	objectPosition := identifierObjectPosition(identifier)
+	if aliases.requests[objectPosition] || aliases.urls[objectPosition] || aliases.headers[objectPosition] ||
+		aliases.bodies[objectPosition] {
+		return true
+	}
 
-	return aliases.requests[position] || aliases.urls[position] || aliases.headers[position] || aliases.bodies[position]
+	liveFrom, found := aliases.bufferLiveFrom[objectPosition]
+
+	return found && (position == token.NoPos || position >= liveFrom)
 }
 
-func isRequestMutationTarget(expression ast.Expr, aliases requestMutationAliases) bool {
-	root := selectorRootIdentifier(expression)
+func isRequestMutationTargetAt(expression ast.Expr, aliases requestMutationAliases, position token.Pos) bool {
+	root := requestMutationRootIdentifier(expression)
 	if root == nil {
 		return false
 	}
 
-	position := identifierObjectPosition(root)
+	return isRequestAliasAt(root, aliases, position)
+}
 
-	return aliases.requests[position] || aliases.urls[position] || aliases.headers[position] || aliases.bodies[position]
+func requestMutationRootIdentifier(expression ast.Expr) *ast.Ident {
+	for {
+		expression = unparen(expression)
+		switch typed := expression.(type) {
+		case *ast.IndexExpr:
+			expression = typed.X
+		case *ast.SliceExpr:
+			expression = typed.X
+		default:
+			return selectorRootIdentifier(expression)
+		}
+	}
 }
 
 func requestCallEscapesWithAllowances(
@@ -378,12 +641,12 @@ func requestCallEscapesWithAllowances(
 		return false
 	}
 
-	if hasSelector && requestValueEscapes(selector.X, aliases) {
+	if hasSelector && requestValueEscapesAt(selector.X, aliases, call.Pos()) {
 		return true
 	}
 
 	for _, argument := range call.Args {
-		if requestValueEscapes(argument, aliases) {
+		if requestValueEscapesAt(argument, aliases, call.Pos()) {
 			return true
 		}
 	}
@@ -401,12 +664,29 @@ func allowedConstructedRequestCalls(
 	allowedSelectors := make(map[*ast.SelectorExpr]bool)
 
 	if !allowContentTypeSetter {
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			call, isCall := node.(*ast.CallExpr)
+			if isCall && isBytesBodyReader(file, call) {
+				allowedCalls[call] = true
+			}
+
+			return true
+		})
+
 		return allowedCalls, allowedSelectors
 	}
 
 	ast.Inspect(function.Body, func(node ast.Node) bool {
 		call, isCall := node.(*ast.CallExpr)
-		if !isCall || !isGeneratedContentTypeSet(file, call, requestObjects) {
+		if !isCall {
+			return true
+		}
+
+		if isBytesBodyReader(file, call) {
+			allowedCalls[call] = true
+		}
+
+		if !isGeneratedContentTypeSet(file, call, requestObjects) {
 			return true
 		}
 
@@ -430,7 +710,7 @@ func requestReturnEscapes(
 	allowConstructedReturn bool,
 ) bool {
 	for index, result := range statement.Results {
-		if !requestValueEscapes(result, aliases) {
+		if !requestValueEscapesAt(result, aliases, result.Pos()) {
 			continue
 		}
 
@@ -471,6 +751,10 @@ func isRequestInjectedDo(
 }
 
 func requestValueEscapes(node ast.Node, aliases requestMutationAliases) bool {
+	return requestValueEscapesAt(node, aliases, token.NoPos)
+}
+
+func requestValueEscapesAt(node ast.Node, aliases requestMutationAliases, position token.Pos) bool {
 	found := false
 
 	ast.Inspect(node, func(child ast.Node) bool {
@@ -479,7 +763,7 @@ func requestValueEscapes(node ast.Node, aliases requestMutationAliases) bool {
 		}
 
 		identifier, ok := child.(*ast.Ident)
-		if ok && isRequestAlias(identifier, aliases) {
+		if ok && isRequestAliasAt(identifier, aliases, position) {
 			found = true
 
 			return false
@@ -492,7 +776,7 @@ func requestValueEscapes(node ast.Node, aliases requestMutationAliases) bool {
 }
 
 func requestMethodValueEscapes(selector *ast.SelectorExpr, aliases requestMutationAliases) bool {
-	if !requestValueEscapes(selector.X, aliases) {
+	if !requestValueEscapesAt(selector.X, aliases, selector.Pos()) {
 		return false
 	}
 

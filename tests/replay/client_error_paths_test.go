@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"testing"
@@ -36,6 +37,80 @@ func TestClientConfigurationErrors(t *testing.T) {
 	t.Run("invalid base URLs", testInvalidBaseURLs)
 	t.Run("nil client receiver", testNilClientReceiver)
 	t.Run("nil context", testNilRequestContext)
+}
+
+func TestNewClientRejectsHTTPClientCookieJar(t *testing.T) {
+	t.Parallel()
+
+	jar, err := cookiejar.New(nil)
+	require.NoError(t, err)
+
+	httpClient := new(http.Client)
+	httpClient.Jar = jar
+
+	_, err = tplink.NewClient(tplink.WithHTTPClient(httpClient))
+	assertCookieJarConfigurationError(t, err)
+	assert.Same(t, jar, httpClient.Jar, "the caller-owned HTTP client must not be modified")
+}
+
+func TestNewClientCookieJarValidationUsesEffectiveHTTPClient(t *testing.T) {
+	t.Parallel()
+
+	jar, err := cookiejar.New(nil)
+	require.NoError(t, err)
+
+	jarredClient := new(http.Client)
+	jarredClient.Jar = jar
+
+	client, err := tplink.NewClient(
+		tplink.WithHTTPClient(jarredClient),
+		tplink.WithHTTPClient(valueHTTPDoer{}),
+	)
+	require.NoError(t, err)
+	require.NoError(t, client.Close())
+
+	_, err = tplink.NewClient(
+		tplink.WithHTTPClient(valueHTTPDoer{}),
+		tplink.WithHTTPClient(jarredClient),
+	)
+	assertCookieJarConfigurationError(t, err)
+}
+
+//nolint:paralleltest // This test replaces the process-global default client.
+func TestNewClientDefaultHTTPClientCookieJarValidation(t *testing.T) {
+	defaultClient := http.DefaultClient
+	assert.Nil(t, defaultClient.Jar)
+
+	client, err := tplink.NewClient()
+	require.NoError(t, err)
+	require.NoError(t, client.Close())
+
+	jar, err := cookiejar.New(nil)
+	require.NoError(t, err)
+
+	jarredDefault := new(http.Client)
+	jarredDefault.Jar = jar
+	http.DefaultClient = jarredDefault
+
+	t.Cleanup(func() { http.DefaultClient = defaultClient })
+
+	_, err = tplink.NewClient()
+	assertCookieJarConfigurationError(t, err)
+	assert.Same(t, jar, http.DefaultClient.Jar, "the caller-owned default client must not be modified")
+
+	replacement, err := tplink.NewClient(tplink.WithHTTPClient(valueHTTPDoer{}))
+	require.NoError(t, err, "an option that overrides the default client should be validated")
+	require.NoError(t, replacement.Close())
+}
+
+func assertCookieJarConfigurationError(t *testing.T, err error) {
+	t.Helper()
+	assertConfigurationError(t, err)
+
+	var configurationError *tplinkmodels.ConfigurationError
+
+	require.ErrorAs(t, err, &configurationError)
+	assert.Equal(t, "HTTP client cookie jar must be nil for the reusable client", configurationError.Message)
 }
 
 func assertConfigurationError(t *testing.T, err error) {

@@ -71,6 +71,18 @@ func NewClient(options ...Option) (*Client, error) {
 		}
 	}
 
+	if httpClient, ok := client.httpClient.(*http.Client); ok && httpClient != nil {
+		if httpClient.Jar != nil {
+			return nil, tplinkmodels.NewConfigurationError(
+				"HTTP client cookie jar must be nil for the reusable client",
+				nil,
+			)
+		}
+
+		httpClientSnapshot := *httpClient
+		client.httpClient = &httpClientSnapshot
+	}
+
 	return client, nil
 }
 
@@ -117,7 +129,10 @@ func isNilHTTPDoer(client HTTPDoer) bool {
 }
 
 // WithHTTPClient sets an HTTP implementation, such as *http.Client or a test
-// transport that implements HTTPDoer.
+// transport that implements HTTPDoer. Implementations used by a reusable
+// Client must not retain or send account-specific cookies. NewClient rejects
+// *http.Client values with a non-nil Jar and snapshots accepted clients while
+// retaining their Transport for custom transport behavior.
 //
 //nolint:ireturn // Client options compose through the public Option interface.
 func WithHTTPClient(client HTTPDoer) Option {

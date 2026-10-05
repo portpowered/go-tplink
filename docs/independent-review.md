@@ -1,363 +1,247 @@
 # Independent review record
 
-Status: pending two independent reviews of every item in the
-[current checklist](template-checklist.md) at the final implementation commit.
-Record each reviewer's separate verdicts, evidence, findings, and dispositions
-here, including exact CI, documentation, and published CLI installation results.
+Status: **open; fixes and two final independent approvals are required**.
 
-## Historical scope
+These repair reports audit `7b1742fb0efbfe441f31c3a0317e63584988f516`.
+The current [checklist](template-checklist.md) pins shared template
+`585b5677caebd4e6d58db215e5278d35a4a7aadf`.
+The reports include separate audits of that standards clarification.
 
-Earlier reviews covered item 5 at `65c2626a1f88e1d275163552fefd817bdab01773`
-and item 15 at `2298ea5`. Their records remain in Git history:
-[lint review](https://github.com/portpowered/go-tplink/blob/b4a683e697a17f18e5b20d6a6c0adaf22c59e15e/docs/all-linter-review.md)
-and [paired replay review](https://github.com/portpowered/go-tplink/blob/b4a683e697a17f18e5b20d6a6c0adaf22c59e15e/docs/paired-replay-review.md).
-They do not certify expanded model-generation, documentation, or CLI requirements.
+## Findings being resolved
 
-## Reviewer 1 — TP-Link full checklist review
+- A caller-supplied value can bypass a closed wire enum constraint.
+- An alias to the cloud send helper can bypass actual target validation.
+- Request body backing bytes can change after construction.
+- A network call in a shipped example can evade the root inventory gate.
+- An injected shared cookie jar can transfer cookies between accounts.
+- Contributor documentation has stale configuration and check descriptions.
 
-**Reviewed implementation commit:** `7688030c012429bd16da752a0cf3e5696b31d739`.
-**Checklist/standards baseline:** `go-third-party-template` commit
-`987b9c34a6b927472c21604617b6842a4238746b`; reviewed the library, client design,
-verification, website, and release standards as well as this repository's expanded
-16-item checklist. These are Reviewer 1 dispositions at this SHA, not final checklist
-sign-off; Reviewer 2 and any later implementation fixes still need verification.
+The second reviewer disclosed seeing historical review snippets before delivering
+this report. Its reproduced findings are repair evidence; a replacement blind
+reviewer will provide final approval. Prior reports remain in Git history.
+The first reviewer completed a blind all-item audit and its post-delivery
+document appendix. Neither this record nor passing CI closes any unresolved
+checklist item.
 
-**Build and publication evidence:** CI run
-[37164564131](https://github.com/portpowered/go-tplink/actions/runs/37164564131)
-completed successfully on the reviewed SHA. Its full-repository and standalone CLI
-all-linter jobs use golangci-lint v2.14.0; build, race tests, vet, module/format checks,
-schema generation, replay coverage, and the wire-inventory command also passed across
-the configured Linux/macOS/Windows matrix. Documentation run
-[37164564119](https://github.com/portpowered/go-tplink/actions/runs/37164564119)
-completed its build and uploaded Pages artifact `11289430900`; its deploy job was
-skipped for the pull request. I inspected the artifact's 14 HTML pages and checked
-their local targets and fragments: no broken internal links were found, and the
-rendered pages contained no external links. The current live site root returns 200,
-but its `/go-tplink/docs/guides/cli/` route returns 404, so this candidate's guide is
-not published. GitHub lists SDK `v0.2.1` as the latest release; the CLI tag
-`cmd/go-tplink/v0.1.0` is absent (`gh api` returns 404 and `go list -m` reports an
-unknown revision). No source files were changed by this review.
+## First review: independent findings
 
-### Item verdicts
+# Blind checklist audit — go-tplink PR 1 (Reviewer 1)
 
-1. **PASS (Reviewer 1).** `pkg/tplink` is a standalone provider client, examples
-   consume only its public package, and the customer guides describe generic caller
-   responsibilities. A search of README, guides, SDK, examples, and CLI found no
-   consuming-application adapter or rollout-specific dependency.
+**Reviewed source:** `7b1742fb0efbfe441f31c3a0317e63584988f516`
+**Canonical review:** [PR 1](https://github.com/portpowered/go-tplink/pull/1)
+**Review date:** 2026-10-04
+**Scope:** independent read-only audit of all 16 checklist items against the frozen source. The source checkout used for probes was a clean detached TEMP clone at the reviewed SHA. I made no source changes and did not read `docs/independent-review.md` before delivering this initial report.
+**Reviewer:** Reviewer 1 — independent Codex agent
 
-2. **PASS (Reviewer 1).** README examples and the MDX authentication, devices,
-   errors, lighting, plugs, and CLI guides match the exported client operations.
-   The guides explain request-scoped authentication and errors; `docs/architecture.md`
-   documents `WithHTTPClient`; OpenAPI and fixture docs repeatedly label the contract
-   and examples implementation-derived/synthetic rather than vendor-verified.
+## Findings affecting merge eligibility
 
-3. **PASS (Reviewer 1).** README provides Go-version, CI, replay-coverage, release,
-   Go Reference, license, and documentation badges. The live coverage JSON, Pages
-   root, and pkg.go.dev URLs returned HTTP 200 during this review. The repository and
-   module values match `go.mod`.
+- **F1 — Item 4, closed enum provenance:** the wire gate accepts caller-controlled `LoginCloudRequestMethod` values in the closed `LoginCloudRequest.Method` enum. The schema permits only `login`; an arbitrary value of the defined string type compiles and is emitted. The committed caller-positive probe explicitly blesses this case.
+- **F2 — Item 4, request body backing bytes:** the request mutation gate tracks the `http.Request` and its URL/header/body fields, but not the byte slice retained by `bytes.NewReader`. A valid mutation of `bodyBytes` after request construction compiles and passes the default inventory gate.
+- **F3 — Item 4, shipped example scan:** `productionGoFiles` scans SDK packages and the nested CLI, but omits the shipped `examples/list-devices` source. A compile-valid unregistered `http.Get` added there compiles and passes the default inventory gate. A corresponding CLI injection is rejected by that gate, but there is no committed CLI-specific negative that locks this behavior through the default root command.
+- **F4 — Items 2, 9 and 15, injected cookie state:** `WithHTTPClient` accepts a reusable `*http.Client` with a shared `CookieJar` without rejecting it or isolating cookie state. Its cookies can cross account calls to the same cloud origin. The architecture guide says a client can be shared across accounts, without this transport-state qualification, and the replay fixtures do not assert two-account cookie isolation.
 
-4. **OPEN — F-R1-1 through F-R1-5.** The schema and written inventory cover the
-   implemented single `POST /` cloud route, nested command JSON, responses, and
-   generated constants, but the source gate is not a complete wire/model inventory.
-   `tools/wireinventory.productionGoFiles` scans only `pkg/tplink`,
-   `pkg/tplinkmodels`, and `pkg/dependencies`; it neither inspects the full generated
-   model population nor verifies a schema-bound method/path at the actual
-   `http.NewRequestWithContext`/`HTTPDoer.Do` call site. The gate tests do not add an
-   unreferenced exported JSON struct, an anonymous nested wire object, or an
-   unschematized route. `checkRawWireStrings` rejects only string literals already
-   present in generated constants; its negative test uses the known value `"system"`,
-   so a novel fixed string/key is accepted, and numeric/boolean literals such as a
-   handwritten relay or delay value are not checked. Caller-open `SetLightState`
-   tracking seeds only the parameter name `request` in `checkFunctionBody`; renaming
-   that parameter bypasses the alias rule. `isOpenMapSource` does not recognize
-   address-taking (`&request.State`), allowing a pointer alias and later indexed write
-   to evade the mutation/escape checks. The current map gate also does not bind
-   query/header map keys or method/path values to generated declarations at send.
-   Finally, `.github/workflows/ci.yml` uses `git diff --exit-code` on fixed generated
-   paths after generation, which misses newly untracked generated files.
+These findings mean the frozen implementation is **not merge eligible** under the checklist. Passing CI does not resolve them.
 
-   The independent model search found two omitted exported compatibility helpers:
-   `dependencymodels.SendCloudRequestParams` and
-   `SendCloudRequestJSONRequestBody`, re-exported from `pkg/generatedwire/compat.gen.go`,
-   are absent from `docs/wire-model-inventory.md`'s complete inventory. The same
-   inventory says all capability flags and relay states are referenced at their
-   interpretation sites, but generated `DeviceCapabilityDisabled` and
-   `DeviceStateOff` have no production use; only the enabled/on variants are used.
-   Record these as unused exports/values or correct the usage claim. These missing
-   proofs keep the item open even though the current schema generation and inventory
-   commands pass.
+## Checklist verdicts
 
-5. **OPEN — F-R1-6.** The exact reviewed-commit CI run passed its blocking root and CLI
-   full-linter jobs with `linters.default: all` and pinned v2.14.0, as well as build,
-   race, and replay jobs. However, the pinned release standard requires the SDK tag
-   workflow itself to rerun the full all-linter gate, generation/drift, endpoint
-   inventory, and coverage before publication. `.github/workflows/release.yml`'s SDK
-   `verify-and-publish` job runs compatibility, `go test -race`, replay coverage, vet,
-   and a consumer check, but does not run the SDK all-linter, `go build`, schema
-   generation/drift, or `tools/wireinventory`. No SDK release workflow has run on
-   this candidate. Keep the release gate open until those required checks are covered.
+1. **PASS — application-independent SDK.** The reusable API is under `pkg/tplink`; the read-only example in `examples/list-devices`, README, and customer guides describe the provider client generically. No consuming-application adapter or rollout plan appears in the public client/docs.
 
-6. **OPEN — F-R1-7.** `tools/replaycoverage` sets `-coverpkg` to only
-   `github.com/portpowered/go-tplink/pkg/tplink`; the generated report says 94.0%, and
-   CI enforces a 90% minimum for that package. `pkg/tplinkmodels` and
-   `pkg/dependencies/cloud` are not measured separately or together with the public
-   client, while the standard requires public and transport coverage and a combined
-   non-generated total. The current number therefore does not establish the required
-   coverage population or report its exclusions/uncovered behavior.
+2. **PARTIAL — user documentation matches most of the API, but the account-sharing statement is incomplete.** README and MDX guides describe the exported `Login`, `AuthContext`, client options, supported operations, typed errors, token handling, and synthetic evidence. The authentication guide includes a compiling-shape `WithBaseURL`/`WithHTTPClient` example. However, `docs/architecture.md:20` says a client can be shared across accounts, while `pkg/tplink/client.go:87-125` accepts an HTTP client carrying shared account cookies without an isolation rule. See F4.
 
-7. **OPEN — F-R1-8.** The required package boundaries exist (`pkg/tplink`,
-   `pkg/dependencymodels`, `pkg/dependencies/cloud`, and separate public projections),
-   and compatibility aliases are generated. The provider wire contract still puts
-   login, device-list, and passthrough/feature payload responsibilities in one
-   `api/openapi.yaml`, with a single generated `pkg/dependencymodels/models.gen.go`,
-   rather than separate schemas/generated files by API responsibility as required by
-   the pinned standard. The candidate SDK import path has not been tested from a
-   clean consumer against this unpublished version: the release workflow consumer
-   runs only on a future SDK tag, and the nested CLI currently pins public SDK v0.2.1.
+3. **PASS — README badges.** README contains Go version, CI, replay coverage, release, Go Reference, license, and documentation badges. Targets resolve to the repository workflows/metadata, pkg.go.dev, license, Pages, and coverage report. The current coverage artifact reports 95.5%.
 
-8. **PASS (Reviewer 1).** `tplink.NewClient` takes functional options, provides
-   defaults, and validates its HTTP client/base URL. `WithHTTPClient` and
-   `WithBaseURL` are documented. Account credentials are supplied only to `Login`,
-   rather than stored in reusable client options.
+4. **FAIL — API, wire inventory, provenance, and network-edge gates.** Positive evidence: the OpenAPI schemas split the single implemented cloud `POST /` route and its login/device/passthrough payloads; the CLI contracts and public projection have separate schemas; nested command payloads and known keys are generated; `docs/wire-model-inventory.md` inventories route, models, nested fields and primitive values; model and request tests cover anonymous/unreferenced handwritten JSON shapes, callback and named-result provenance, sibling-package helpers, recursive and long helper chains, aliases, URL user information, `GetBody`, content length, transfer encoding, clones and helper escapes. CI regenerates schemas and runs the Fumadocs API action. No other active non-HTTP network edge or network-using third-party dependency was found in the shipped root/CLI modules.
 
-9. **PASS (Reviewer 1).** The reusable client stores no account credentials or
-   session token; each operation receives `AuthContext`, and login returns the token
-   in `LoginResult`. The only network lifecycle is caller-owned HTTP. `Close` marks
-   the client unusable and does not retain or close the caller's transport. No event,
-   socket, or other stateful connection operation is claimed.
+   Concrete failures:
+   - **F1:** `api/authentication.openapi.yaml:18-21` constrains `LoginCloudRequest.Method` to `login`. `tools/wireinventory/package_provenance_test.go:88-121` accepts `BuildFromCaller(value dm.LoginCloudRequestMethod)` and forwards that value into `dm.LoginCloudRequest{Method: ...}`; lines 233-259 repeat a caller-positive through a named-result helper. `tools/wireinventory/scalar_package_provenance.go:305-313` treats every parameter of an exported function as caller-safe. This permits a caller-supplied string such as `"invented"` at a closed schema enum field.
+   - **F2:** `pkg/dependencies/cloud/cloud.go:66-83` marshals into `bodyBytes`, passes it to `bytes.NewReader`, then sends the request. In the clean TEMP clone, I inserted `bodyBytes[0] = 'x'` after request construction and before `Do`. `go test -run '^$' ./pkg/dependencies/cloud` compiled; the exact default root command `go run ./tools/wireinventory` exited 0. No after-construction backing-byte negative or safe immutable-body positive exists.
+   - **F3:** `tools/wireinventory/main.go:172-206` scans `pkg/...` and `cmd/go-tplink`, not `examples/list-devices`. I added a compile-valid temporary example function that called `http.Get("https://unregistered.invalid")`; `go test ./examples/list-devices` compiled it and `go run ./tools/wireinventory` exited 0. The equivalent CLI probe exited 1 with “HTTP constructor or convenience request is outside the registered cloud transport.” That demonstrates CLI inclusion, but no committed CLI-specific negative exercises it through the root command.
 
-10. **PASS (Reviewer 1).** The only active outbound network edge found is
-    `pkg/dependencies/cloud.Send` calling the injected `HTTPDoer.Do`; callers install
-    it through `WithHTTPClient`, and replay tests substitute offline transports.
-    Production SDK searches found no WebSocket, MQTT, RTC, raw socket, or dependency-
-    initiated network edge needing another injection seam.
+5. **PASS — blocking all-linter CI and offline checks.** `.golangci.yml` uses literal `linters.default: all`; CI and release workflows pin golangci-lint v2.14.0 and run full root and CLI modules. The exact-head PR checks show build, lint, CLI lint, root/CLI verify matrices (Linux, Windows, macOS as configured), API compatibility, and schema generation all successful. No continue-on-error or zero issues exit-code bypass is configured. Root `Makefile` default is `check`, which runs lint, build, race tests, vet, module metadata, formatting, replay coverage, and wire inventory; it also delegates build/test/lint/vet/metadata/format to the CLI module.
 
-11. **PASS (Reviewer 1).** `Login` explicitly exchanges email/password and returns
-    the token; later calls require the caller to supply it through `AuthContext`.
-    There is no automatic refresh or internal token update, and the authentication
-    guide tells callers to log in again when a token expires.
+6. **PASS — deterministic paired replay and coverage.** Replay fixtures are explicitly synthetic; the fixture README says no live-capture provenance is claimed. Pair tests assert request matching before response, request/body/query/header fields, status and response, call order and exhaustion. Coverage is measured over public client, projection, and HTTP transport packages, excludes generated files, enforces 80% and targets 90%; exact documentation artifact coverage is 95.5%.
 
-12. **OPEN — F-R1-9.** Customer guides are MDX under `docs/guides/`, and the exact
-    Docs run successfully rendered the API reference and guides. The artifact's 14
-    HTML files had no broken internal targets in my check. The PR's Pages deploy job
-    was skipped, and the currently live site returns 404 for the new CLI guide route;
-    there is no publication proof for this candidate. Build success alone does not
-    satisfy the publish requirement.
+7. **PASS — package/schema boundaries and public import path.** Provider wire contracts are in `pkg/dependencymodels`, transport in `pkg/dependencies/cloud`, client in `pkg/tplink`, and semantic projections in `pkg/tplinkmodels`; CLI local models have their own schema/generated file. The complete inventory maps schema components and call sites. I created a separate TEMP consumer module with a local replace to this frozen SDK and imported `pkg/tplink` and `pkg/tplinkmodels`; `go test ./...` passed, including `ClientInterface`, options and token model references. Public proxy verification for a future tagged SDK is a post-merge release gate, not evidence available from this PR artifact.
 
-13. **OPEN — F-R1-10.** The README includes contributor evidence and maintenance
-    material that the checklist assigns elsewhere: “Testing and evidence,” the
-    make-command/coverage table, lint and CI implementation details, schema-generation
-    and release-workflow explanation, and direct navigation to protocol, fixtures,
-    and architecture notes. It also says the SDK uses golangci-lint v2.3.0 while
-    current CI pins v2.14.0, installs SDK v0.1.0 while v0.2.1 is latest, and instructs
-    `go install .../cmd/go-tplink@v0.1.0` although that CLI tag does not exist. This
-    conflicts with the CLI guide's accurate “first release pending” status. The
-    tracked docs include distinct customer MDX and contributor architecture,
-    protocol, fixture, inventory, checklist, and review material; the README should
-    remain customer-focused and those conflicting/stale claims should be corrected.
+8. **PASS — explicit options and defaults.** `NewClient` installs the default base URL and `http.DefaultClient`; `WithHTTPClient` rejects nil implementations, and `WithBaseURL` validates scheme, host, userinfo, query and fragment. Account credentials/tokens are supplied per operation rather than stored in client configuration.
 
-14. **OPEN.** This is the first independent section for SHA `7688030`; Reviewer 2's
-    separate all-16 review is pending. Items 4–7 and 12–13, 15–16 have concrete open
-    findings, so the two-reviewer/current-final-commit requirement is not met.
-    Reviewer 2 and both reviewers must recheck any corrected final SHA.
+9. **FAIL — injected CookieJar account isolation.** `pkg/tplink/client.go:53-60, 87-125` defaults to `http.DefaultClient` and stores any provided `HTTPDoer` directly. `pkg/dependencies/cloud/cloud.go:42-60` calls `Do` without handling cookie state. Reusing `http.Client{Jar: sharedJar}` lets response cookies from one account be sent on a later account’s request to the same endpoint. No distinguishable configuration error, explicit per-account cookie session, or two-account complete-request test exists. Stateless custom transports remain injectable.
 
-15. **OPEN — F-R1-11.** The paired synthetic HTTP suite matches before returning the
-    response, checks method/origin/escaped path, exact query value sets and body,
-    rejects unpaired/extra calls, and checks full sequence consumption. It covers all
-    public client operations and labels fixtures synthetic; the supported surface has
-    no OAuth, CSRF, OTP, signaling, or socket flow. Two request-match gaps remain:
-    `matchFixtureHeaders` iterates expected header names without rejecting additional
-    actual headers, so adding a new authentication/security header does not fail the
-    pair. Also, the OpenAPI route is `/` but every synthetic fixture stores `path: ""`;
-    the matcher compares `URL.EscapedPath()` before the real HTTP transport normalizes
-    an empty path to `/`. The stored path is therefore not the actual escaped wire
-    path. Fix the header-set and root-path expectations before closing item 15.
+10. **PASS — applicable network edges are injectable.** The shipped SDK has one active HTTP cloud endpoint; no WebSocket, MQTT, RTC, event, or raw-socket edge is present. The client exposes the `HTTPDoer` seam and paired tests use injected doers. Network-primitive gate controls cover convenience HTTP calls, `Do`, method values/expressions and raw `net.Dial`. CookieJar state is separately tracked under item 9.
 
-16. **OPEN — F-R1-12.** `cmd/go-tplink` is a separate module with no local `replace`,
-    its own full CLI lint/build/race/vet/module CI, and offline paired tests for
-    authentication failure, commands, cancellation, and close. Its `go.mod` consumes
-    public SDK v0.2.1. There is no published CLI tag or clean public install proof:
-    GitHub returns 404 for `cmd/go-tplink/v0.1.0`, and
-    `go list -m github.com/portpowered/go-tplink/cmd/go-tplink@v0.1.0` fails with
-    `unknown revision`. The CLI README install command is consequently unusable.
-    The current CLI guide correctly says the first release is pending; release/tag
-    both modules in the required order and verify `go install` from the public proxy.
+11. **PASS — explicit token lifecycle.** `Login` returns a `LoginResult` containing the opaque token; authenticated operations take request-scoped `AuthContext`. The docs say there is no supported refresh operation and callers must authenticate again when the provider expires a token. The client does not silently retain updated tokens.
 
-### Reviewer 1 finding disposition at 7688030
+12. **PASS for the PR build; publication pending merge.** The docs workflow uses the shared Fumadocs action on the schemas and `docs/guides`; exact PR artifact run 37231606453 succeeded through build, replay report and Pages artifact upload. Its deployment job is skipped on a pull request. The artifact contained all expected route pages and the generated `POST /` reference. I checked 133 local page links across rendered HTML, including site root and generated reference: zero broken internal links. The OpenAPI files contain no `externalDocs` links. The upgrade guide route used by release notes exists. Main Pages publication remains post-merge proof.
 
-The following findings remain **OPEN** at the reviewed commit: F-R1-1 (incomplete
-wire/model/route gate), F-R1-2 (no novel fixed primitive/key controls), F-R1-3
-(caller-open map parameter/address escapes), F-R1-4 (untracked generated-file drift
-and missing model/primitive inventory entries), F-R1-5 (route/query/header and
-call-site provenance gaps), F-R1-6 (SDK release workflow omits required gates),
-F-R1-7 (coverage scope), F-R1-8 (schema split and candidate consumer proof), F-R1-9
-(candidate Pages publication), F-R1-10 (README audience/stale claims), F-R1-11
-(paired header/path expectations), and F-R1-12 (published SDK/CLI evidence). None is
-resolved by this review record or by the successful PR CI/Docs builds.
+13. **PENDING — post-delivery appendix required.** I reviewed README, examples README, API README, architecture, protocol, fixture/testing docs, synthetic fixture README, wire inventory, checklist, and all guide MDX for audience, purpose, evidence labels, duplicate links and concise scope. README is focused on install, short authenticated example, capabilities, configuration/lifecycle and user-guide links; inventory, fixtures, coverage and generation detail stay in maintainer docs. The task instruction withheld inspection of `docs/independent-review.md` until this initial blind report was delivered. I will append its audience/staleness assessment after delivery; this is not a finding that item 13 is blocked.
 
-## Reviewer 2 — Independent audit at 7688030
+14. **OPEN — no overall sign-off.** This audit is one independent reviewer, F1–F4 remain open, and the checklist itself requires two reviewers to verify every item at the final implementation commit after fixes. Do not check item 14 from this report.
 
-**Reviewed implementation commit:** `7688030c012429bd16da752a0cf3e5696b31d739`.
-**Checklist and standards baseline:** the checklist pins
-`go-third-party-template` commit `987b9c34a6b927472c21604617b6842a4238746b`.
-I independently inspected the public SDK, generated schemas/models, source gates,
-paired replay code, CLI module, tracked Markdown/MDX files, CI and release workflows,
-and the rendered documentation artifact.
+15. **PARTIAL — paired synthetic HTTP exchanges are strong, with cookie-isolation gap.** `tests/replay/transport_pair_test.go` and synthetic JSON fixtures capture expected request and response halves, match before response, reject unexpected calls, and assert sequence exhaustion. CLI integration tests also use paired requests for login, errors, device workflows, cancellation, and cleanup. No test stores a response cookie then asserts full outbound requests for two accounts sharing the injected client, so the current supported `CookieJar` behavior is not verified; see F4.
 
-**Exact-commit evidence:** CI run
-[37164564131](https://github.com/portpowered/go-tplink/actions/runs/37164564131)
-completed successfully on this SHA, including blocking root and CLI golangci-lint
-v2.14.0 jobs and the configured build, race, vet, module, generation, inventory,
-and replay checks. Documentation run
-[37164564119](https://github.com/portpowered/go-tplink/actions/runs/37164564119)
-also succeeded for this SHA and uploaded artifact `11289430900`; its PR deploy
-job was skipped. I inspected the rendered artifact: internal page targets resolve,
-but the generated API endpoint's visible main content does not show that the
-contract is implementation-derived (the caveat is only in schema/page data).
-The live site root returned HTTP 200, while
-[the CLI guide route](https://portpowered.github.io/go-tplink/docs/guides/cli/)
-returned HTTP 404. GitHub lists SDK `v0.2.1` as latest and no
-`cmd/go-tplink/v*` tag exists. The checked-in CLI module requires public SDK
-`v0.2.1`; no clean install from a published CLI version can be demonstrated.
+16. **PASS for CLI implementation; published-proxy proof pending.** `cmd/go-tplink` is a separate nested module, uses the public SDK API, has help, JSON reads, nonzero errors, cancellation, explicit commands for changes, secret input options, protected token storage/export, and cleanup. CLI integration tests exercise paired HTTP exchanges including auth failure and client close; CI has pinned lint/build/race/test/vet/format/tidy checks for the CLI across its configured matrix. The MDX guide documents checkout use now and states the first standalone release is pending. The release workflow has a later tag job that installs the published module through the Go proxy and checks `--help`; that final install/release proof has not run at this pre-merge SHA.
 
-### Item verdicts
+## Implementation merge status and final publication proof
 
-1. **PASS (Reviewer 2).** The public client is in `pkg/tplink`; the CLI is a
-   separate nested module and examples import the library package. I found no
-   consuming-application adapter or rollout-specific dependency in the SDK,
-   examples, or customer guides.
+**Implementation merge eligibility at frozen SHA: NO.** F1–F4 are unresolved checklist findings despite all exact-head CI checks passing. Re-audit the fixes at the final implementation SHA with both independent reviewers.
 
-2. **PASS (Reviewer 2).** The authenticated README example and MDX guides cover
-   login, request-scoped tokens, device discovery, plug and bulb workflows, and
-   errors using the exported API. The architecture guide documents transport
-   injection. The docs and fixture notes distinguish the implementation-derived
-   contract and synthetic fixtures from vendor-verified behavior.
+**Final publication proof: PENDING.** The Pages deploy job is skipped on PRs; SDK/CLI tags and public Go proxy consumer/install checks only run after the main merge and tag events.
 
-3. **PASS (Reviewer 2).** README includes Go version, CI, replay coverage, release,
-   Go Reference, license, and documentation badges. The linked Go-version, CI,
-   coverage JSON, release, pkg.go.dev, license, and Pages endpoints each returned
-   HTTP 200 during this audit.
+---
 
-4. **OPEN — F-R2-1.** The written inventory covers the single cloud `POST /`
-   route and known payloads, but it is not a complete generated model and
-   call-site inventory. `tools/wireinventory` scans handwritten files only in
-   `pkg/tplink`, `pkg/tplinkmodels`, and `pkg/dependencies`; it checks a list of
-   required constants, raw literals already found in the generated constants,
-   and selected map constructions. It does not enumerate all generated wire
-   models or pair each outbound network primitive with its schema method/path at
-   the actual send. For example, exported generated
-   `dependencymodels.SendCloudRequestParams` and alias
-   `SendCloudRequestJSONRequestBody` are missing from
-   `docs/wire-model-inventory.md`. The generated
-   `DeviceCapabilityDisabled` and `DeviceStateOff` constants have no production
-   use, while the inventory says capability flags and relay states are referenced
-   at their interpretation sites. The required model negative for an unreferenced
-   exported handwritten JSON struct and anonymous nested wire object is absent.
-   These gaps leave the item open despite the passing inventory command.
+**Signed:** Reviewer 1 — independent Codex agent
+**Reviewed commit:** `7b1742fb0efbfe441f31c3a0317e63584988f516`
 
-5. **OPEN — F-R2-2.** The exact pull-request CI run is green and its blocking
-   full-repository lint configuration uses literal `linters.default: all` with
-   pinned golangci-lint v2.14.0. The pinned release guide additionally requires
-   the SDK tag workflow to rerun the full all-linter, build, schema drift,
-   endpoint inventory, and coverage gates on the tag itself. In
-   `.github/workflows/release.yml`, the SDK job runs compatibility, race tests,
-   replay coverage, vet, and a public consumer check, but omits those release-time
-   linter, build, generation/drift, and wire-inventory checks. No SDK release run
-   exists for this candidate.
 
-6. **OPEN — F-R2-3.** `tools/replaycoverage` sets `-coverpkg` to only
-   `github.com/portpowered/go-tplink/pkg/tplink` and enforces a 90% threshold
-   for that package. It does not measure `pkg/tplinkmodels` and
-   `pkg/dependencies/cloud` separately and together with the public package, or
-   report the combined non-generated coverage population and exclusions required
-   by the standard. The reported 94.0% therefore does not establish the required
-   combined 80% floor.
 
-7. **OPEN — F-R2-4.** The package boundaries and separate public projection schema
-   exist, but the provider wire schema keeps login, device-list, passthrough, and
-   nested feature payloads together in `api/openapi.yaml`, and code generation
-   emits one `pkg/dependencymodels/models.gen.go`. The pinned standard requires
-   responsibility-specific schemas and generated Go files rather than this
-   monolithic wire schema/model file. The missing generated model population noted
-   in F-R2-1 also prevents a complete inventory.
+## Post-delivery appendix — review-record audience and staleness
 
-8. **PASS (Reviewer 2).** `tplink.NewClient` accepts functional options, validates
-   configuration, and supplies defaults. `WithHTTPClient` and `WithBaseURL`
-   provide the documented injection/configuration points; credentials are passed
-   to `Login`, not stored in client options.
+After delivery of the initial blind report, I read `docs/independent-review.md` from the same immutable TEMP clone at the reviewed SHA. This supersedes item 13's initial “pending appendix” note with the verdict below; the file was not used to form the earlier blind findings.
 
-9. **PASS (Reviewer 2).** The SDK returns the login token to the caller and
-   requires an `AuthContext` for later calls. The client holds no account token,
-   and `Close` only ends the local client lifecycle. The implemented surface has
-   no event or socket session to expose or close.
+- **Audience and purpose:** the file is maintainer review evidence, linked from `docs/template-checklist.md` and `docs/fixtures-and-testing.md`, and is not included in the customer Pages navigation. It keeps separate reviewer sections, exact reviewed commit identifiers, check run/artifact evidence, item findings, and dispositions. It is the single tracked independent-review record; prior scoped reports are linked as historical Git references, not duplicated as tracked documents.
+- **Staleness:** both review sections explicitly identify implementation commit `7688030c012429bd16da752a0cf3e5696b31d739` and the top status says the record is pending two independent reviews at the final implementation commit. Their reported CI run, 94.0% coverage, unpublished CLI route, findings, and checklist observations are therefore historical evidence for that SHA. They must not be presented as current evidence for `7b1742fb...`: this audit independently verified that the coverage population, schema/model inventory, CLI-guide/API link, and checklist link changed by 7b. The record should append the two new final-SHA audits and their finding dispositions before item 14 is checked; keeping the old findings is appropriate as history.
+- **Item 13 update:** **PASS for documentation audience, purpose, and retention.** The review record is maintainer-facing, its historical evidence is commit-scoped, and it is not a duplicate customer document. The absent final-SHA reports are a separate item 14 completion requirement and do not keep item 13 blocked. The exact 7b record still needs the final reports appended before overall review sign-off.
 
-10. **PASS (Reviewer 2).** The production network search found one active edge:
-    `pkg/dependencies/cloud.Send` calls the injected `HTTPDoer.Do`, supplied
-    through `WithHTTPClient`. Replay tests substitute offline transports. I found
-    no additional WebSocket, MQTT, raw socket, or dependency-initiated network
-    edge requiring an injection seam.
+**Appendix signed:** Reviewer 1 — independent Codex agent; inspected only the immutable `7b1742fb0efbfe441f31c3a0317e63584988f516` clone.
 
-11. **PASS (Reviewer 2).** `Login` is an explicit credential exchange that
-    returns the session token. Authenticated calls receive the caller-owned token
-    through `AuthContext`. The SDK does not silently refresh or retain a token;
-    the docs state that the provider surface has no refresh operation and callers
-    must log in again after expiration.
+## Second review: repair evidence
 
-12. **OPEN — F-R2-5.** The customer guides are MDX under `docs/guides/`, and the
-    Docs artifact builds with no broken internal targets. However, guide pages do
-    not link to the matching generated API reference page, as required. The PR
-    deploy is skipped and the current live CLI guide route returns 404, so this
-    candidate's guide is not published. The successful artifact build does not
-    satisfy publication.
+# Independent checklist audit — go-tplink
 
-13. **OPEN — F-R2-6.** The README has accurate customer-facing SDK usage, but it
-    also contains contributor material (“Testing and evidence,” the make-command
-    table, replay coverage mechanics, lint/CI details, and schema/release workflow
-    explanation). It advertises SDK install `@v0.1.0` although `v0.2.1` is
-    latest, CLI install `@v0.1.0` although no nested CLI tag exists, and
-    golangci-lint v2.3.0 although CI pins v2.14.0. In the rendered API reference,
-    the endpoint's visible page content labels synthetic examples but does not
-    display the contract's implementation-derived/not-vendor-verified status;
-    that caveat is present only in embedded schema/page data. These are stale
-    claims and evidence/audience gaps under the documentation standard. I inspected
-    the tracked README, API README, examples README, contributor notes, checklist,
-    review record, and all customer MDX guides; no additional standalone historical
-    report is currently tracked.
+**Reviewer:** Codex agent /root/tplink_7b_r2 (R2)
+**Commit:** 7b1742fb0efbfe441f31c3a0317e63584988f516
+**Method:** Read-only audit in clean detached temp clone. No repository source edits. All negative probes below compiled in that clone, executed, then removed; clone returned clean at the reviewed SHA. Exact-SHA CI was already green, so I did not repeat the full baseline suite.
 
-14. **OPEN.** The record now contains separate R1 and R2 sections for this SHA,
-    but the checklist does not link to `docs/independent-review.md`, and items
-    4–7, 12–13, 15, and 16 remain open. The standard requires the item to stay
-    unchecked while any finding or other checklist item is open, then requires
-    both reviewers to recheck the corrected final commit.
+## Protocol exception
 
-15. **OPEN — F-R2-7.** The synthetic replay suite pairs requests and responses,
-    matches method/origin/escaped path/query/body before returning responses, and
-    checks response metadata and full sequence consumption. The matcher compares
-    repeated query values in order and rejects extra calls. Two gaps remain:
-    `matchFixtureHeaders` checks only names present in the expected header map,
-    so an unexpected added header is accepted; and fixtures store `path: ""` for
-    the schema route `/`, while the matcher compares the pre-transport
-    `URL.EscapedPath()` directly. The replay evidence therefore does not assert
-    the schema route's slash representation at the wire boundary. Both cases need
-    exact paired expectations before item 15 can pass.
+Before this initial report was delivered, a broad rg command included docs and inadvertently printed portions of docs/independent-review.md. The source review and reproductions below were independently developed; I did not rely on, cite, or incorporate that report. Strict blindness was compromised. I disclosed this to the coordinating reviewer. This report is useful repair evidence, but is **not final independent sign-off**; a replacement blind reviewer will be used after fixes.
 
-16. **OPEN — F-R2-8.** `cmd/go-tplink` is a standalone module that imports the
-    public SDK, has blocking pinned all-linter/build/test/module CI, and uses
-    offline paired command tests for authentication success/failure, read/control
-    commands, cancellation, and cleanup. Its module has no local replacement.
-    However, there is no published nested CLI tag or consumer install result;
-    `git ls-remote` returns no `cmd/go-tplink/v*` tags. README's
-    `go install ...@v0.1.0` command is therefore not installable, and the live
-    CLI guide is unavailable. Keep the item open until the SDK is released first,
-    the CLI tag is published, and `go install` succeeds from a clean consumer
-    through the public proxy.
+## Verdicts
 
-### Reviewer 2 finding disposition at 7688030
+1. **PASS** — Public SDK and docs are independent of a consuming application.
+2. **PASS** — Supported operations, auth, errors, injection, and evidence status are documented consistently.
+3. **PASS** — README contains Go, CI, coverage, release, Go Reference, license, and docs badges linked to live project endpoints.
+4. **FAIL** — Source gate has bypasses; examples omitted; anonymous nested wire objects not individually inventoried. Details below.
+5. **PASS** — Exact-SHA blocking CI and pinned literal-all lint configuration passed.
+6. **PASS** — Deterministic synthetic paired fixtures and 95.5 percent combined non-generated coverage (423/443) exceed threshold and target.
+7. **FAIL** — Required anonymous-object model inventory is incomplete; package boundaries otherwise match.
+8. **PASS** — Functional options, defaults, HTTP injection, and base URL validation are present.
+9. **FAIL** — A shared injected HTTP CookieJar leaks one account's cookie into another account's requests.
+10. **PASS for implemented edges** — SDK HTTP edge is injected; no other supported SDK/dependency network edge found.
+11. **OPEN** — Login returns credentials explicitly and client does not rotate/store them, but no explicit token-refresh operation or supported refresh contract exists.
+12. **PASS for artifact / publication pending** — MDX guides and generated reference rendered with valid internal links; verify Pages deployment after merge.
+13. **OPEN** — Complete audience/incoming-link appendix is pending; do not call blocked merely because the report was withheld.
+14. **OPEN** — Findings remain; both reviewers must verify fixes at final SHA.
+15. **PASS for supported HTTP exchanges** — Synthetic request/response pairs validate requests and call order.
+16. **OPEN for release proof; implementation merge eligible** — CLI is separate and tested, but first nested module tag and consumer installation remain pending.
 
-F-R2-1 (wire/model/network inventory), F-R2-2 (SDK release gates), F-R2-3
-(coverage population), F-R2-4 (responsibility-specific schema/model layout),
-F-R2-5 (published/reference-linked guides), F-R2-6 (README and visible evidence
-copy), F-R2-7 (paired header/path assertions), and F-R2-8 (published CLI tag and
-consumer install) remain **OPEN** at this exact SHA. Successful PR CI and Docs
-artifact builds do not resolve these findings. No SDK/CLI source or release was
-changed by this audit.
+## Detailed evidence
+
+### 1 — PASS
+
+Reusable API is in pkg/tplink; device transport and models are separately packaged. Examples and the standalone CLI do not introduce an application adapter or rollout plan into the public SDK. README and Pages explain library usage.
+
+### 2 — PASS
+
+Customer guides cover authentication and supported device workflows using exported API shapes. WithHTTPClient and caller-provided AuthContext are documented. The API/site title says implementation-derived; synthetic examples and historical/captured evidence are distinguished. I found no provider-guarantee overclaim in the reviewed customer content.
+
+### 3 — PASS
+
+README has the seven required badges: Go version, CI, replay coverage, release, Go Reference, license, and docs. Targets use this repository's live endpoints; no template repository values remain. README focuses on install, a short authenticated example, capabilities, caller obligations, and guide links.
+
+### 4 — FAIL
+
+**Mutable request body backing storage bypass.** pkg/dependencies/cloud/cloud.go newRequest marshals into bodyBytes and passes bytes.NewReader(bodyBytes) to http.NewRequestWithContext (around lines 65–89). In the temp clone I inserted bodyBytes[0] = 'X' after request construction and before Do. Since the reader aliases the backing array, the emitted body can change. Both GOTOOLCHAIN=go1.26.8 GOWORK=off go build ./... and default-root go run ./tools/wireinventory passed. The gate lacks the addendum-required mutable-slice negative and immutable-body positive controls.
+
+**cloud.Send function-value alias bypass.** tools/wireinventory/main.go:255–293 counts direct cloud.Send calls; tools/wireinventory/model_gates.go:1185+ resolves the direct call. I added var aliasSend = cloud.Send, left a dead direct call under if false so the direct-call count stayed satisfied, and sent the live request through aliasSend with &url.URL{Scheme:"https", Host:"attacker.invalid"}. Build and default root wireinventory both passed. Existing tests exercise direct-call receiver/authority substitution but not local or file-scope method-value aliases.
+
+**Example outbound edge excluded.** tools/wireinventory/main.go:175–184 enumerates SDK, dependency, generated-wire, and CLI directories but omits examples. A compile-valid http.Get("https://attacker.invalid") in examples/list-devices/main.go passed go build ./... and default root wireinventory. The same probe in cmd/go-tplink/main.go is rejected by the root command. The addendum requires all shipped modules, including examples, in source inventory.
+
+**Anonymous nested generated objects absent from the complete model inventory.** pkg/dependencymodels/passthrough.gen.go has anonymous nested structs in command DTOs including SystemGetSysInfoCommand, SystemRebootCommand, SystemSetDevAliasCommand, SystemSetRelayStateCommand, and lighting commands. docs/wire-model-inventory.md records named parent models and scalar enums but not each inline object with schema owner, generated declaration, generator, and conversion/use site. Named-component validation does not establish the required anonymous-object population.
+
+**Docs build evidence.** The docs workflow uses portpowered/api-docs-website-github-action@v0.3.0, api/openapi.yaml, docs/guides, and /go-tplink. Exact-SHA docs build succeeded. I inspected the downloaded artifact, including root, guides, and API reference, and checked internal rendered anchors; no broken internal targets were found. PR deploy skip is expected. This does not cure the source-gate failures or substitute for post-merge publication proof.
+
+Required controls: mutable body alias rejected and immutable body accepted; function-value cloud.Send alias plus dead direct-call bypass rejected; example network edge rejected by default root command; anonymous model entries verified against schema, generated Go, and actual use.
+
+### 5 — PASS
+
+Exact-SHA CI run 37231606460 succeeded (SDK verify matrix, schema generation, CLI verify, lint, compatibility). Docs run 37231606453 built the artifact; deploy was skipped for the PR. Both lint configs say literal linters.default: all; CI pins golangci-lint v2.14.0, runs full repository, and does not zero lint exit status, continue after failures, or limit to new issues. Root make check covers lint/build/race tests/vet/tidy/format/replay coverage/wire inventory and CLI checks; CLI has a separate blocking check. I found no intentional persisted JSON-key migration in this snapshot, so missing regression lock for such a migration is not a present style-fix blocker.
+Links: https://github.com/portpowered/go-tplink/actions/runs/37231606460 and https://github.com/portpowered/go-tplink/actions/runs/37231606453.
+
+### 6 — PASS
+
+tests/replay/transport_pair_test.go checks paired request matching before response return, order/exhaustion, mismatches, and unexpected or duplicate calls. Fixtures are labeled synthetic. CI coverage report: combined non-generated 95.5 percent (423/443); pkg/tplink 94.0 percent; pkg/tplinkmodels 96.3 percent; cloud 100 percent. One generated file is excluded and identified.
+
+### 7 — FAIL
+
+Package locations meet the requested separation: pkg/tplink public SDK, pkg/tplinkmodels semantic projection, pkg/dependencymodels provider wire models, pkg/dependencies/cloud HTTP behavior. Schemas and generated files are split by responsibility, compatibility aliases/projections are used, and CI includes public API compatibility/consumer verification. However the inventory does not list anonymous nested generated wire structs individually. This violates the complete model inventory requirement despite the correct architecture.
+
+### 8 — PASS
+
+NewClient(options ...Option) sets default HTTP client and base URL. WithBaseURL validates HTTP(S), host, and rejects user info/query/fragment. WithHTTPClient accepts HTTPDoer and rejects nil-like clients. Tests cover invalid configuration. Credentials are per-operation AuthContext, not reusable client options. CookieJar leak is item 9.
+
+### 9 — FAIL
+
+Client stores reusable transport/base URL and close state; caller supplies auth. But WithHTTPClient accepts *http.Client unchanged, including a shared mutable Jar. Runtime temp-clone probe used one SDK client with http.Client{Jar: cookiejar.New(nil)}. Fake account-A login set account-session=account-A. A later GetDevices request for account B carried token-B and account-A's cookie:
+
+    second account token="token-B" cookie="account-session=account-A"
+    COOKIE_CROSSED_ACCOUNTS
+
+The addendum requires rejecting a shared unsafe jar with a distinguishable error or explicit isolated session cookie storage, and testing two accounts through the same reusable client.
+
+### 10 — PASS for current implementation
+
+Only SDK network edge found is cloud.Send calling injected HTTPDoer.Do; WithHTTPClient installs the doer and replay tests substitute offline transports. No SDK websocket/MQTT/RTC/raw-socket edge or active network call in pinned dependencies was found. The example-scan omission is a separate item-4 inventory defect.
+
+### 11 — OPEN
+
+Login is explicit and returns AuthContext; protected calls receive it from the caller. Client does not retain/rotate credentials. No refresh operation is implemented and checked-in schemas do not establish provider refresh support. Because checklist item 11 literally requires token exchange and refresh operations, sign-off needs either supported refresh evidence and an explicit API or an agreed contract that refresh is unsupported. Existing docs correctly leave token storage/renewal to the caller, but do not prove the explicit refresh requirement.
+
+### 12 — PASS for artifact; publication proof pending
+
+Customer guides are MDX under docs/guides and link to generated reference pages. Exact-SHA Fumadocs artifact renders expected guide/API content and internal links resolve. Static schema review found no externalDocs link left unchecked. PR artifact is not main Pages deployment proof; inspect after merge.
+
+### 13 — OPEN
+
+README and guides appear focused; contributor inventories and fixture details are separated from customer navigation. This item requires every tracked doc, duplicate/internal-doc and incoming-link review, plus rendered site and release-note review. Complete that appendix after initial report delivery. Do not mark blocked solely because independent-review.md had been withheld.
+
+### 14 — OPEN
+
+Findings in items 4, 7, 9 remain; item 11 and 13 remain open. Both reviewers need separate evidence for all 16 and must recheck the final implementation SHA. This report is not a final two-reviewer sign-off, also due to the disclosure above.
+
+### 15 — PASS for supported HTTP exchanges
+
+Synthetic replay tests match method/full URL/body/relevant headers before paired response, reject mismatches/extras, and enforce ordered consumption where needed. Error, CLI auth, and cancellation paths use injected transports. No capture provenance is claimed and no other supported transport requires transcript handling. Add a specific two-account CookieJar regression under item 9.
+
+### 16 — OPEN for final release proof; implementation merge eligible
+
+cmd/go-tplink is a separate module consuming the SDK. Its module has pinned all-linter/build/race-test/vet/module checks. Offline tests cover auth failure, discovery/control, output, cancellation, and cleanup using paired injected transports. Credentials use prompt/environment/stdin/file inputs; export is explicit; secrets are redacted; device changes require commands. Customer CLI guide is MDX and says first standalone CLI release is pending. Implementation is merge eligible after source/model/account-isolation fixes; first CLI nested-module tag and separate consumer installation must follow SDK/CLI release.
+
+## Separate addendum audit
+
+I separately audited the parent-provided 23-line clarification at template main commit 585b5677caebd4e6d58db215e5278d35a4a7aadf (not the frozen target checklist source):
+- Mutable body backing-buffer protection: FAIL, reproduced above.
+- All shipped modules/examples included in network source inventory: FAIL, reproduced above.
+- Injected CookieJar account isolation: FAIL, reproduced above.
+- The CLI unregistered-call probe is rejected by the actual default root gate, but the test suite lacks a compile-valid CLI network mutation that runs that exact root/default command. Add an end-to-end negative test so later scope changes cannot bypass root CI.
+
+## Disposition
+
+**Not merge eligible yet** because of confirmed wire-gate bypasses, omitted example sources, incomplete anonymous-object inventory, and cross-account cookie leakage. Re-run affected default-root gate tests and account-isolation tests after fixes. Resolve item 11 refresh contract. After implementation blockers are fixed, merge eligibility is distinct from post-merge Pages deployment and post-tag CLI consumer proof. I did not merge or release.
+
+**Signed:** Codex agent /root/tplink_7b_r2 (R2), 2026-10-04
+
+
+## Post-delivery documentation audience and freshness appendix (item 13)
+
+After delivering the initial report, I reviewed all tracked Markdown/MDX documentation in the clone, including docs/independent-review.md, README, api/README, examples/README, contributor guides, every customer guide, and the synthetic-fixture README; I also checked the rendered artifact targets and release workflow URLs.
+
+Audience separation is mostly sound: protocol, fixture provenance, architecture, schema inventory, checklist, and review evidence are contributor material; operation/authentication/device/CLI/error guides are MDX customer pages; README is focused on install, authenticated use, capabilities, caller obligations, and guide links. The checklist links the review record at docs/template-checklist.md:10, and contributor fixture notes link to it too. The CLI guide accurately says the first standalone release is pending and places its go install @latest instruction under “After publication”; it gives a checkout command for the interim. The release workflow’s notes link targets the existing upgrading guide route. The docs artifact build and internal target check passed.
+
+**Concrete item-13 freshness issue:** docs/architecture.md says that a client can be shared across accounts without changing shared token state. At the reviewed SHA, WithHTTPClient accepts a standard http.Client with a shared CookieJar, and my item-9 runtime probe demonstrates account-A cookies sent with account-B token. That customer-facing claim is too broad and should either be corrected or made conditional on cookie-jar isolation; resolving item 9 should include this doc.
+
+**Review-record staleness:** docs/independent-review.md contains R1/R2 sections for 7688030..., not this reviewed 7b1742... SHA. The SHA labels make those historical results identifiable, and the file’s top status says two final-commit reviews are pending, but no current-commit disposition matrix is present. Several statements are stale against this tree: the older reports say the checklist does not link to the review record (the current frozen checklist does); they describe pre-split schemas and old coverage scope, whereas api/README and docs/fixtures-and-testing.md now describe separate schemas and combined coverage; and they repeat old README/install/lint claims that current README and CLI guide no longer make. Keep those sections clearly historical and, when recording current reviews, add explicit per-finding resolution/supersession dispositions instead of carrying old “open” items forward as current.
+
+**Small accuracy issue:** docs/fixtures-and-testing.md’s make check table says it “Runs lint, build, and test,” although root Makefile check additionally runs vet, tidy, format, replay-coverage, wire-inventory, and CLI checks. This is not a broken link or customer-guide issue, but should be updated to avoid under-describing the command.
+
+Verdict 13 remains OPEN pending correction of the cross-account architecture claim with the item-9 fix and a current-review-record update after final reviewers. No additional broken internal rendered targets were found. The documentation audit does not make item 13 blocked merely because the current report had initially been withheld.

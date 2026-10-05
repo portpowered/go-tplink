@@ -179,6 +179,7 @@ func productionGoFiles(root string) ([]string, error) {
 		filepath.Join(root, "pkg", "dependencymodels"),
 		filepath.Join(root, "pkg", "generatedwire"),
 		filepath.Join(root, "cmd", "go-tplink"),
+		filepath.Join(root, "examples"),
 	}
 
 	for _, directory := range directories {
@@ -273,9 +274,16 @@ func checkClientCloudSendLocations(root string, paths []string) error {
 			return fmt.Errorf("read production file while locating cloud.Send: %w", err)
 		}
 
-		file, err := parser.ParseFile(token.NewFileSet(), path, source, 0)
+		fileSet := token.NewFileSet()
+
+		file, err := parser.ParseFile(fileSet, path, source, 0)
 		if err != nil {
 			return fmt.Errorf("parse production file while locating cloud.Send: %w", err)
+		}
+
+		checkErr := checkCloudSendReferences(path, expectedPath, fileSet, file)
+		if checkErr != nil {
+			return checkErr
 		}
 
 		if !hasCloudSendCall(file) {

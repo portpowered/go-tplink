@@ -10,6 +10,16 @@ description: Check transport type identities when updating from v0.2.1.
 interface. Its `Do(*http.Request) (*http.Response, error)` method is unchanged,
 and `*http.Client` still implements it.
 
+The effective `*http.Client` passed to `NewClient` must have `Jar == nil`,
+including `http.DefaultClient`. A cookie jar can attach one account's saved
+cookies to another account's request because credentials are supplied per
+request. `NewClient` returns a `tplinkmodels.ConfigurationError` when the
+selected client has a jar. The last `WithHTTPClient` option selects the client
+that is checked. Accepted `*http.Client` values are shallow-copied, so later
+changes to the caller's client fields do not alter the SDK's copy; its
+`Transport` remains shared. Custom `HTTPDoer` implementations must not retain or
+send account-specific cookies.
+
 The defining package identity changed. Rebuild your application and check
 custom transport interfaces, function signatures, and reflection-based code.
 Use the SDK's `tplink.HTTPDoer` name when declaring transport inputs.

@@ -16,10 +16,15 @@ workflows.
   `WithHTTPClient`. Callers can configure a standard `http.Client` or another
   `Do`-compatible transport for proxies, tracing, and offline tests.
 
-The client uses request-scoped `AuthContext` values. A client can therefore be
-shared across accounts without changing shared token state. Callers own request
-contexts and deadlines. `Close` prevents future client operations; it does not
-close a caller-owned HTTP transport.
+The SDK's reusable configuration (endpoint and selected HTTP-doer reference)
+is fixed at construction; it stores no account credentials, tokens, or
+connection/session state. Credentials and tokens are supplied through
+request-scoped `AuthContext` values. Construction rejects an effective
+standard `*http.Client` whose `Jar` is non-nil, including one supplied through
+`WithHTTPClient`: a mutable shared cookie jar could send one account's cookie
+with another account's token. Custom HTTP doers must also avoid cross-account
+state and be safe for concurrent use when shared. The caller owns the
+transport; `Close` prevents future client operations but does not close it.
 
 ## Authentication and session handling
 

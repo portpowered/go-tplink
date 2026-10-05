@@ -95,7 +95,7 @@ import (
   "net/url"
   "github.com/portpowered/go-tplink/pkg/dependencymodels"
 )
-func r2MethodFromCaller(value dependencymodels.LoginCloudRequestMethod) dependencymodels.LoginCloudRequestMethod {
+func r2NameFromCaller(value string) string {
   return value
 }
 func r2QueryFromCaller(values url.Values) url.Values { return values }
@@ -105,8 +105,8 @@ import (
   "net/url"
   "github.com/portpowered/go-tplink/pkg/dependencymodels"
 )
-func BuildFromCaller(value dependencymodels.LoginCloudRequestMethod, values url.Values) {
-  _ = dependencymodels.LoginCloudRequest{Method: r2MethodFromCaller(value)}
+func BuildFromCaller(value string, values url.Values) {
+  _ = dependencymodels.LoginParams{CloudUserName: r2NameFromCaller(value)}
   _ = r2QueryFromCaller(values).Encode()
 }
 `,
@@ -131,6 +131,18 @@ func TestGeneratedScalarMetadataIncludesEnumFieldsAndConstants(t *testing.T) {
 
 	if !metadata.fields[dependencymodelsImportPath][loginCloudRequestModel]["Method"] {
 		t.Fatal("generated scalar metadata omitted LoginCloudRequest.Method")
+	}
+
+	if !metadata.closedEnums[dependencymodelsImportPath][loginCloudRequestModel]["Method"]["login"] {
+		t.Fatal("generated scalar metadata omitted the closed LoginCloudRequest.Method enum")
+	}
+
+	if metadata.closedEnums[dependencymodelsImportPath]["LoginParams"]["CloudUserName"] != nil {
+		t.Fatal("generated scalar metadata marked caller-defined LoginParams.CloudUserName closed")
+	}
+
+	if metadata.constantValues[dependencymodelsImportPath]["MethodLogin"] != "login" {
+		t.Fatal("generated scalar metadata did not bind MethodLogin to its schema value")
 	}
 }
 
@@ -237,7 +249,7 @@ func TestPackageScalarProvenanceAcceptsCallerAndGeneratedValues(t *testing.T) {
 	paths := writePackageSourceFiles(t, root, map[string]string{
 		helperSourceFilename: `package fixture
 import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
-func r2CallerMethod(value dm.LoginCloudRequestMethod) (result dm.LoginCloudRequestMethod) {
+func r2CallerName(value string) (result string) {
   result = value
   return
 }
@@ -245,8 +257,8 @@ func r2GeneratedMethod() dm.LoginCloudRequestMethod { return dm.MethodLogin }
 `,
 		useSourceFilename: `package fixture
 import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
-func Build(value dm.LoginCloudRequestMethod) {
-  _ = dm.LoginCloudRequest{Method: r2CallerMethod(value)}
+func Build(value string) {
+  _ = dm.LoginParams{CloudUserName: r2CallerName(value)}
   _ = dm.LoginCloudRequest{Method: r2GeneratedMethod()}
 }
 `,
@@ -258,20 +270,100 @@ func Build(value dm.LoginCloudRequestMethod) {
 	}
 }
 
+func TestPackageScalarProvenanceRejectsUnvalidatedClosedEnumCallerValues(t *testing.T) {
+	t.Parallel()
+
+	assertProductionScalarFixtureRejected(t, map[string]string{
+		useSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func Build(value dm.LoginCloudRequestMethod) {
+  _ = dm.LoginCloudRequest{Method: value}
+  request := dm.LoginCloudRequest{}
+  request.Method = value
+}
+`,
+	})
+}
+
+func TestPackageScalarProvenanceRejectsClosedEnumFromExportedModelParameter(t *testing.T) {
+	t.Parallel()
+
+	assertProductionScalarFixtureRejected(t, map[string]string{
+		useSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func Build(value dm.LoginCloudRequest) {
+  _ = dm.LoginCloudRequest{Method: value.Method}
+}
+`,
+	})
+}
+
+func TestPackageScalarProvenanceRejectsHelperSinkWithFixedClosedEnumArgument(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	paths := writePackageSourceFiles(t, root, map[string]string{
+		helperSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func r2BuildRequest(method dm.LoginCloudRequestMethod) {
+  _ = dm.LoginCloudRequest{Method: method}
+}
+`,
+		useSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func Build() { r2BuildRequest(dm.LoginCloudRequestMethod("unregistered")) }
+`,
+	})
+
+	_, _, generatedTypes, generatedScalars, metadata := readCurrentGeneratedInventory(t)
+
+	sources := make([]packageProvenanceFile, 0, len(paths))
+	for _, path := range paths {
+		sources = append(sources, parsePackageProvenanceFile(t, path))
+	}
+
+	err := checkPackageScalarProvenance(sources, generatedTypes, generatedScalars, metadata)
+	if err == nil || !strings.Contains(err.Error(), generatedScalarMessage) ||
+		!strings.Contains(err.Error(), helperSourceFilename) {
+		t.Fatalf("checkPackageScalarProvenance() error = %v, want helper sink rejection", err)
+	}
+}
+
+func TestPackageScalarProvenanceAcceptsCallerOpenValueThroughHelperSink(t *testing.T) {
+	t.Parallel()
+
+	paths := writePackageSourceFiles(t, t.TempDir(), map[string]string{
+		helperSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func r2BuildRequest(name string) {
+  _ = dm.LoginParams{CloudUserName: name}
+}
+`,
+		useSourceFilename: `package fixture
+func Build(name string) { r2BuildRequest(name) }
+`,
+	})
+
+	err := checkProductionScalarFiles(t, paths)
+	if err != nil {
+		t.Fatalf("checkProductionFiles() rejected a caller-open value at a helper sink: %v", err)
+	}
+}
+
 func TestPackageScalarProvenanceAcceptsCallerSuppliedCallbacks(t *testing.T) {
 	t.Parallel()
 
 	paths := writePackageSourceFiles(t, t.TempDir(), map[string]string{
 		helperSourceFilename: `package fixture
 import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
-func r2ForwardCallback(callback func/*helper*/ () dm.LoginCloudRequestMethod) dm.LoginCloudRequestMethod {
+func r2ForwardCallback(callback func/*helper*/ () string) string {
   return callback()
 }
 `,
 		useSourceFilename: `package fixture
 import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
-func BuildFromCaller(callback func/*caller*/ () dm.LoginCloudRequestMethod) {
-  _ = dm.LoginCloudRequest{Method: r2ForwardCallback(callback)}
+func BuildFromCaller(callback func/*caller*/ () string) {
+  _ = dm.LoginParams{CloudUserName: r2ForwardCallback(callback)}
 }
 `,
 	})
@@ -288,8 +380,8 @@ func TestPackageScalarProvenanceAcceptsCallerSuppliedReturnedCallback(t *testing
 	paths := writePackageSourceFiles(t, t.TempDir(), map[string]string{
 		useSourceFilename: `package fixture
 import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
-func BuildFromCaller(callbackFactory func/*factory*/ () func/*method*/ () dm.LoginCloudRequestMethod) {
-  _ = dm.LoginCloudRequest{Method: callbackFactory()()}
+func BuildFromCaller(callbackFactory func/*factory*/ () func/*method*/ () string) {
+  _ = dm.LoginParams{CloudUserName: callbackFactory()()}
 }
 `,
 	})
@@ -526,9 +618,11 @@ func TestHTTPRequestConstructorMutationGateRejectsMutationsAndEscapes(t *testing
 		"URL alias mutation":         "requestURL := request.URL\n\trequestURL.RawQuery = \"r2-constructor-alias=value\"",
 		"header alias mutation": "requestHeaders := request.Header\n\trequestHeaders.Add(\"X-R2-Constructor-" +
 			"Alias\", \"value\")",
-		"request alias mutation":  "requestAlias := request\n\trequestAlias.Method = \"PUT\"",
-		"unverified helper":       "r2MutateRequest(request)",
-		"aggregate helper escape": "r2MutateRequest(struct{ Request *http.Request }{request})",
+		"request alias mutation":      "requestAlias := request\n\trequestAlias.Method = \"PUT\"",
+		"unverified helper":           "r2MutateRequest(request)",
+		"aggregate helper escape":     "r2MutateRequest(struct{ Request *http.Request }{request})",
+		"body backing mutation":       "bodyBytes[0] = 'x'",
+		"body backing alias mutation": "mutableBody := bodyBytes\n\tmutableBody[0] = 'x'",
 	}
 
 	for name, mutation := range fixtures {
@@ -545,6 +639,50 @@ func TestHTTPRequestConstructorMutationGateRejectsMutationsAndEscapes(t *testing
 				t.Fatalf("checkEndpointSource() error = %v, want constructed request mutation rejection", err)
 			}
 		})
+	}
+}
+
+func TestHTTPRequestConstructorMutationGateAcceptsUnchangedBodyBackingBuffer(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("..", "..", "pkg", "dependencies", "cloud", "cloud.go")
+	//nolint:gosec // Test reads the fixed production cloud transport as the immutable body control.
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checkErr := checkEndpointSource(path, source)
+	if checkErr != nil {
+		t.Fatalf("checkEndpointSource() rejected the unchanged request body buffer: %v", checkErr)
+	}
+}
+
+func TestHTTPRequestConstructorMutationGateTracksBackingBufferBeforeReader(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("..", "..", "pkg", "dependencies", "cloud", "cloud.go")
+	//nolint:gosec // Test reads the fixed production cloud transport source as an alias mutation fixture.
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mutated := strings.Replace(string(source),
+		"request, err := http.NewRequestWithContext(",
+		"readerBytes := bodyBytes\n\trequest, err := http.NewRequestWithContext(", 1)
+
+	mutated = strings.Replace(mutated, "bytes.NewReader(bodyBytes)", "bytes.NewReader(readerBytes)", 1)
+
+	mutated = strings.Replace(mutated, "return request, nil", "bodyBytes[0] = 'x'\n\treturn request, nil", 1)
+
+	if mutated == string(source) {
+		t.Fatal("test fixture did not find the body reader and request return")
+	}
+
+	checkErr := checkEndpointSource(path, []byte(mutated))
+	if checkErr == nil || !strings.Contains(checkErr.Error(), requestMutationMessage) {
+		t.Fatalf("checkEndpointSource() error = %v, want original backing-buffer mutation rejection", checkErr)
 	}
 }
 

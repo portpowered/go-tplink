@@ -6,18 +6,43 @@ import (
 	"go/parser"
 	"go/token"
 	"maps"
+	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
+	"strconv"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+const (
+	goTrueLiteral  = "true"
+	goFalseLiteral = "false"
 )
 
 type generatedScalarMetadata struct {
-	constants map[string]map[string]bool
-	fields    map[string]map[string]map[string]bool
+	constants      map[string]map[string]bool
+	constantValues map[string]map[string]string
+	fields         map[string]map[string]map[string]bool
+	closedEnums    map[string]map[string]map[string]map[string]bool
+	modelFields    map[string]map[string]map[string]generatedModelFieldType
+	modelTypes     map[string]map[string]bool
+}
+
+type generatedModelFieldType struct {
+	packagePath string
+	typeName    string
 }
 
 func readGeneratedScalarMetadata(root string) (generatedScalarMetadata, error) {
 	metadata := generatedScalarMetadata{
-		constants: make(map[string]map[string]bool),
-		fields:    make(map[string]map[string]map[string]bool),
+		constants:      make(map[string]map[string]bool),
+		constantValues: make(map[string]map[string]string),
+		fields:         make(map[string]map[string]map[string]bool),
+		closedEnums:    make(map[string]map[string]map[string]map[string]bool),
+		modelFields:    make(map[string]map[string]map[string]generatedModelFieldType),
+		modelTypes:     make(map[string]map[string]bool),
 	}
 
 	scalarTypes, err := readGeneratedModelScalars(root)
@@ -25,41 +50,197 @@ func readGeneratedScalarMetadata(root string) (generatedScalarMetadata, error) {
 		return generatedScalarMetadata{}, err
 	}
 
-	for _, output := range generatedDependencyModelOutputs() {
-		path := filepath.Join(root, filepath.FromSlash(output))
+	schemaPaths := make(map[string]string)
 
-		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-		if err != nil {
-			return generatedScalarMetadata{}, fmt.Errorf("parse generated scalar metadata %s: %w", output, err)
+	for _, source := range generatedModelSources() {
+		if isDependencyModelOutput(source.outputPath) {
+			schemaPaths[source.outputPath] = source.schemaPath
 		}
-
-		importPath := generatedModelImportPath(output)
-		mergeGeneratedConstantNames(metadata.constants, importPath, generatedConstantNames(file))
-		mergeGeneratedScalarFields(metadata.fields, importPath, generatedScalarFieldNames(file, scalarTypes))
 	}
 
-	constantsPath := filepath.Join(root, "pkg", "dependencymodels", "wire_constants.gen.go")
+	for _, output := range generatedDependencyModelOutputs() {
+		err = mergeGeneratedOutputScalarMetadata(root, output, schemaPaths, scalarTypes, &metadata)
+		if err != nil {
+			return generatedScalarMetadata{}, err
+		}
+	}
 
-	constantsFile, err := parser.ParseFile(token.NewFileSet(), constantsPath, nil, 0)
+	err = mergeGeneratedWireConstantMetadata(root, &metadata)
 	if err != nil {
-		return generatedScalarMetadata{}, fmt.Errorf("parse generated scalar metadata %s: %w", constantsPath, err)
+		return generatedScalarMetadata{}, err
 	}
 
-	mergeGeneratedConstantNames(metadata.constants, dependencymodelsImportPath,
-		generatedConstantNames(constantsFile))
-
-	compatibilityPath := filepath.Join(root, "pkg", "generatedwire", "compat.gen.go")
-
-	compatibility, err := parser.ParseFile(token.NewFileSet(), compatibilityPath, nil, 0)
+	err = mergeGeneratedCompatibilityScalarMetadata(root, &metadata)
 	if err != nil {
-		return generatedScalarMetadata{}, fmt.Errorf("parse generated scalar metadata %s: %w", compatibilityPath, err)
+		return generatedScalarMetadata{}, err
 	}
-
-	compatibilityImportPath := generatedModelImportPath("pkg/generatedwire/compat.gen.go")
-	metadata.constants[compatibilityImportPath] = generatedConstantNames(compatibility)
-	metadata.fields[compatibilityImportPath] = metadata.fields[dependencymodelsImportPath]
 
 	return metadata, nil
+}
+
+func mergeGeneratedOutputScalarMetadata(
+	root, output string,
+	schemaPaths map[string]string,
+	scalarTypes map[string]bool,
+	metadata *generatedScalarMetadata,
+) error {
+	path := filepath.Join(root, filepath.FromSlash(output))
+
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		return fmt.Errorf("parse generated scalar metadata %s: %w", output, err)
+	}
+
+	importPath := generatedModelImportPath(output)
+	mergeGeneratedConstantNames(metadata.constants, importPath, generatedConstantNames(file))
+	mergeGeneratedConstantValues(metadata.constantValues, importPath, generatedConstantValues(file))
+	mergeGeneratedScalarFields(metadata.fields, importPath, generatedScalarFieldNames(file, scalarTypes))
+
+	if schemaPath := schemaPaths[output]; schemaPath != "" {
+		schemaFile := filepath.Join(root, filepath.FromSlash(schemaPath))
+
+		err = mergeGeneratedClosedEnums(metadata.closedEnums, importPath, schemaFile, file)
+		if err != nil {
+			return err
+		}
+	}
+
+	mergeGeneratedModelFields(metadata.modelFields, importPath, generatedModelFieldTypes(file, importPath))
+	mergeGeneratedModelTypes(metadata.modelTypes, importPath, generatedModelTypeNames(file))
+
+	return nil
+}
+
+func mergeGeneratedWireConstantMetadata(root string, metadata *generatedScalarMetadata) error {
+	path := filepath.Join(root, "pkg", "dependencymodels", "wire_constants.gen.go")
+
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		return fmt.Errorf("parse generated scalar metadata %s: %w", path, err)
+	}
+
+	mergeGeneratedConstantNames(metadata.constants, dependencymodelsImportPath, generatedConstantNames(file))
+	mergeGeneratedConstantValues(metadata.constantValues, dependencymodelsImportPath, generatedConstantValues(file))
+
+	return nil
+}
+
+func mergeGeneratedCompatibilityScalarMetadata(root string, metadata *generatedScalarMetadata) error {
+	path := filepath.Join(root, "pkg", "generatedwire", "compat.gen.go")
+
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		return fmt.Errorf("parse generated scalar metadata %s: %w", path, err)
+	}
+
+	compatibilityPath := generatedModelImportPath("pkg/generatedwire/compat.gen.go")
+	metadata.constants[compatibilityPath] = generatedConstantNames(file)
+	metadata.fields[compatibilityPath] = metadata.fields[dependencymodelsImportPath]
+	metadata.closedEnums[compatibilityPath] = metadata.closedEnums[dependencymodelsImportPath]
+	metadata.modelFields[compatibilityPath] = metadata.modelFields[dependencymodelsImportPath]
+	metadata.modelTypes[compatibilityPath] = metadata.modelTypes[dependencymodelsImportPath]
+	metadata.constantValues[compatibilityPath] = make(map[string]string)
+
+	for name := range metadata.constants[compatibilityPath] {
+		if value, found := metadata.constantValues[dependencymodelsImportPath][name]; found {
+			metadata.constantValues[compatibilityPath][name] = value
+		}
+	}
+
+	return nil
+}
+
+func mergeGeneratedModelTypes(destination map[string]map[string]bool, packagePath string, modelTypes map[string]bool) {
+	if destination[packagePath] == nil {
+		destination[packagePath] = make(map[string]bool)
+	}
+
+	for name := range modelTypes {
+		destination[packagePath][name] = true
+	}
+}
+
+func generatedModelTypeNames(file *ast.File) map[string]bool {
+	names := make(map[string]bool)
+
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.TYPE {
+			continue
+		}
+
+		for _, rawSpec := range general.Specs {
+			typeDefinition, ok := rawSpec.(*ast.TypeSpec)
+			if !ok {
+				continue
+			}
+
+			if _, ok := unparen(typeDefinition.Type).(*ast.StructType); ok {
+				names[typeDefinition.Name.Name] = true
+			}
+		}
+	}
+
+	return names
+}
+
+func mergeGeneratedConstantValues(
+	destination map[string]map[string]string,
+	packagePath string,
+	values map[string]string,
+) {
+	if destination[packagePath] == nil {
+		destination[packagePath] = make(map[string]string)
+	}
+
+	maps.Copy(destination[packagePath], values)
+}
+
+func mergeGeneratedClosedEnums(
+	destination map[string]map[string]map[string]map[string]bool,
+	packagePath, schemaPath string,
+	file *ast.File,
+) error {
+	closedEnums, err := generatedClosedScalarEnums(schemaPath, file)
+	if err != nil {
+		return err
+	}
+
+	if len(closedEnums) == 0 {
+		return nil
+	}
+
+	if destination[packagePath] == nil {
+		destination[packagePath] = make(map[string]map[string]map[string]bool)
+	}
+
+	for typeName, fields := range closedEnums {
+		if destination[packagePath][typeName] == nil {
+			destination[packagePath][typeName] = make(map[string]map[string]bool)
+		}
+
+		maps.Copy(destination[packagePath][typeName], fields)
+	}
+
+	return nil
+}
+
+func mergeGeneratedModelFields(
+	destination map[string]map[string]map[string]generatedModelFieldType,
+	packagePath string,
+	fields map[string]map[string]generatedModelFieldType,
+) {
+	if destination[packagePath] == nil {
+		destination[packagePath] = make(map[string]map[string]generatedModelFieldType)
+	}
+
+	for typeName, modelFields := range fields {
+		if destination[packagePath][typeName] == nil {
+			destination[packagePath][typeName] = make(map[string]generatedModelFieldType)
+		}
+
+		maps.Copy(destination[packagePath][typeName], modelFields)
+	}
 }
 
 func mergeGeneratedConstantNames(destination map[string]map[string]bool, packagePath string, names map[string]bool) {
@@ -120,6 +301,93 @@ func generatedConstantNames(file *ast.File) map[string]bool {
 	return names
 }
 
+func generatedConstantValues(file *ast.File) map[string]string {
+	values := make(map[string]string)
+
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.CONST {
+			continue
+		}
+
+		for _, rawSpec := range general.Specs {
+			spec, ok := rawSpec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+
+			for index, name := range spec.Names {
+				if index >= len(spec.Values) {
+					continue
+				}
+
+				if value, found := generatedConstantValue(spec.Values[index]); found {
+					values[name.Name] = value
+				}
+			}
+		}
+	}
+
+	return values
+}
+
+func generatedConstantValue(expression ast.Expr) (string, bool) {
+	expression = unparen(expression)
+	switch typed := expression.(type) {
+	case *ast.BasicLit:
+		return generatedBasicLiteralConstant(typed)
+	case *ast.UnaryExpr:
+		return generatedUnaryConstant(typed)
+	case *ast.Ident:
+		if typed.Name == goTrueLiteral || typed.Name == goFalseLiteral {
+			return typed.Name, true
+		}
+	}
+
+	return "", false
+}
+
+func generatedBasicLiteralConstant(literal *ast.BasicLit) (string, bool) {
+	//nolint:exhaustive // Only string and integer literals can represent generated scalar constants.
+	switch literal.Kind {
+	case token.STRING:
+		value, err := strconv.Unquote(literal.Value)
+
+		return value, err == nil
+	case token.INT:
+		value, err := strconv.ParseInt(literal.Value, 0, 64)
+		if err != nil {
+			return literal.Value, true
+		}
+
+		return strconv.FormatInt(value, 10), true
+	default:
+		return "", false
+	}
+}
+
+func generatedUnaryConstant(expression *ast.UnaryExpr) (string, bool) {
+	if expression.Op != token.ADD && expression.Op != token.SUB {
+		return "", false
+	}
+
+	value, found := generatedConstantValue(expression.X)
+	if !found {
+		return "", false
+	}
+
+	number, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return "", false
+	}
+
+	if expression.Op == token.SUB {
+		number = -number
+	}
+
+	return strconv.FormatInt(number, 10), true
+}
+
 func generatedScalarFieldNames(file *ast.File, scalarTypes map[string]bool) map[string]map[string]bool {
 	fields := make(map[string]map[string]bool)
 
@@ -178,11 +446,223 @@ func generatedScalarFieldType(expression ast.Expr, file *ast.File, scalarTypes m
 	case *ast.ArrayType:
 		return generatedScalarFieldType(typed.Elt, file, scalarTypes)
 	case *ast.Ident:
-		return scalarTypes[typed.Name]
+		return scalarTypes[typed.Name] || isScalarConversion(typed.Name)
 	case *ast.SelectorExpr:
 		return importedPath(file, typed.X) == dependencymodelsImportPath && scalarTypes[typed.Sel.Name]
 	default:
 		return false
+	}
+}
+
+func generatedClosedScalarEnums(schemaPath string, file *ast.File) (map[string]map[string]map[string]bool, error) {
+	//nolint:gosec // Schema paths come from the checked-in generated model inventory.
+	schemaSource, err := os.ReadFile(schemaPath)
+	if err != nil {
+		return nil, fmt.Errorf("read generated scalar schema %s: %w", schemaPath, err)
+	}
+
+	var document schemaDocument
+
+	err = yaml.Unmarshal(schemaSource, &document)
+	if err != nil {
+		return nil, fmt.Errorf("parse generated scalar schema %s: %w", schemaPath, err)
+	}
+
+	closedEnums := make(map[string]map[string]map[string]bool)
+
+	for schemaName, schemaNode := range document.Components.Schemas {
+		structure := generatedStructForSchema(file, schemaName)
+		if structure == nil {
+			continue
+		}
+
+		properties, decodeErr := generatedSchemaScalarProperties(schemaNode)
+		if decodeErr != nil {
+			return nil, fmt.Errorf("decode scalar component %s in %s: %w", schemaName, schemaPath, decodeErr)
+		}
+
+		closed := generatedClosedScalarProperties(structure, properties)
+		if len(closed) > 0 {
+			closedEnums[schemaName] = closed
+		}
+	}
+
+	return closedEnums, nil
+}
+
+func generatedSchemaScalarProperties(schemaNode yaml.Node) (map[string]struct {
+	Enum []any `yaml:"enum"`
+}, error) {
+	var component struct {
+		Properties map[string]struct {
+			Enum []any `yaml:"enum"`
+		} `yaml:"properties"`
+	}
+
+	err := schemaNode.Decode(&component)
+	if err != nil {
+		return nil, fmt.Errorf("decode schema component properties: %w", err)
+	}
+
+	return component.Properties, nil
+}
+
+func generatedClosedScalarProperties(
+	structure *ast.StructType,
+	properties map[string]struct {
+		Enum []any `yaml:"enum"`
+	},
+) map[string]map[string]bool {
+	closed := make(map[string]map[string]bool)
+
+	for propertyName, property := range properties {
+		if len(property.Enum) == 0 {
+			continue
+		}
+
+		fieldName := generatedJSONStructFieldName(structure, propertyName)
+		if fieldName == "" {
+			continue
+		}
+
+		values := make(map[string]bool, len(property.Enum))
+		for _, value := range property.Enum {
+			values[fmt.Sprint(value)] = true
+		}
+
+		if len(values) > 0 {
+			closed[fieldName] = values
+		}
+	}
+
+	return closed
+}
+
+func generatedStructForSchema(file *ast.File, schemaName string) *ast.StructType {
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.TYPE {
+			continue
+		}
+
+		for _, rawSpec := range general.Specs {
+			typeDefinition, ok := rawSpec.(*ast.TypeSpec)
+			if !ok || typeDefinition.Name.Name != schemaName {
+				continue
+			}
+
+			structure, _ := unparen(typeDefinition.Type).(*ast.StructType)
+
+			return structure
+		}
+	}
+
+	return nil
+}
+
+func generatedJSONStructFieldName(structure *ast.StructType, propertyName string) string {
+	if structure == nil || structure.Fields == nil {
+		return ""
+	}
+
+	for _, field := range structure.Fields.List {
+		if field.Tag == nil {
+			continue
+		}
+
+		tag, err := strconv.Unquote(field.Tag.Value)
+		if err != nil {
+			continue
+		}
+
+		jsonName, _, _ := strings.Cut(reflect.StructTag(tag).Get("json"), ",")
+		if jsonName != propertyName {
+			continue
+		}
+
+		if len(field.Names) == 0 {
+			continue
+		}
+
+		return field.Names[0].Name
+	}
+
+	return ""
+}
+
+func generatedModelFieldTypes(file *ast.File, packagePath string) map[string]map[string]generatedModelFieldType {
+	fields := make(map[string]map[string]generatedModelFieldType)
+
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.TYPE {
+			continue
+		}
+
+		for _, rawSpec := range general.Specs {
+			typeDefinition, isType := rawSpec.(*ast.TypeSpec)
+			if !isType {
+				continue
+			}
+
+			modelFields := generatedModelStructFieldTypes(file, packagePath, typeDefinition)
+			if len(modelFields) > 0 {
+				fields[typeDefinition.Name.Name] = modelFields
+			}
+		}
+	}
+
+	return fields
+}
+
+func generatedModelStructFieldTypes(
+	file *ast.File,
+	packagePath string,
+	typeDefinition *ast.TypeSpec,
+) map[string]generatedModelFieldType {
+	fields := make(map[string]generatedModelFieldType)
+
+	structure, isStruct := unparen(typeDefinition.Type).(*ast.StructType)
+	if !isStruct || structure.Fields == nil {
+		return fields
+	}
+
+	for _, field := range structure.Fields.List {
+		target, found := generatedFieldModelType(field.Type, file, packagePath)
+		if !found {
+			continue
+		}
+
+		for _, name := range field.Names {
+			fields[name.Name] = target
+		}
+	}
+
+	return fields
+}
+
+func generatedFieldModelType(expression ast.Expr, file *ast.File, packagePath string) (generatedModelFieldType, bool) {
+	expression = unparen(expression)
+	switch typed := expression.(type) {
+	case *ast.StarExpr:
+		return generatedFieldModelType(typed.X, file, packagePath)
+	case *ast.ArrayType:
+		return generatedFieldModelType(typed.Elt, file, packagePath)
+	case *ast.Ident:
+		if isScalarConversion(typed.Name) {
+			return generatedModelFieldType{packagePath: "", typeName: ""}, false
+		}
+
+		return generatedModelFieldType{packagePath: packagePath, typeName: typed.Name}, true
+	case *ast.SelectorExpr:
+		resolvedPath := importedPath(file, typed.X)
+		if resolvedPath == "" {
+			return generatedModelFieldType{packagePath: "", typeName: ""}, false
+		}
+
+		return generatedModelFieldType{packagePath: resolvedPath, typeName: typed.Sel.Name}, true
+	default:
+		return generatedModelFieldType{packagePath: "", typeName: ""}, false
 	}
 }
 
@@ -213,13 +693,14 @@ type scalarGlobal struct {
 }
 
 type scalarEvaluation struct {
-	index          *scalarPackageIndex
-	source         packageProvenanceFile
-	values         map[token.Pos]bool
-	functionValues map[token.Pos][]scalarFunction
-	writes         map[token.Pos][]ast.Expr
-	resolving      map[token.Pos]bool
-	callStack      map[string]bool
+	index             *scalarPackageIndex
+	source            packageProvenanceFile
+	values            map[token.Pos]bool
+	functionValues    map[token.Pos][]scalarFunction
+	writes            map[token.Pos][]ast.Expr
+	resolving         map[token.Pos]bool
+	callStack         map[string]bool
+	allowedEnumValues map[string]bool
 }
 
 func newDeclaredScalarFunction(source packageProvenanceFile, declaration *ast.FuncDecl) scalarFunction {
@@ -563,7 +1044,7 @@ func checkPackageScalarProvenance(
 ) error {
 	index := newScalarPackageIndex(files, generatedScalars, metadata)
 	for _, source := range files {
-		err := checkScalarSinksInFile(source, index, generatedTypes, metadata.fields)
+		err := checkScalarSinksInFile(source, index, generatedTypes, metadata)
 		if err != nil {
 			return err
 		}
@@ -576,7 +1057,7 @@ func checkScalarSinksInFile(
 	source packageProvenanceFile,
 	index *scalarPackageIndex,
 	generatedTypes map[string]bool,
-	fieldsByPackage map[string]map[string]map[string]bool,
+	metadata generatedScalarMetadata,
 ) error {
 	for _, declaration := range source.file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
@@ -600,7 +1081,7 @@ func checkScalarSinksInFile(
 				return false
 			}
 
-			violation = scalarSinkViolation(source, node, evaluation, generatedTypes, fieldsByPackage)
+			violation = scalarSinkViolation(source, node, evaluation, generatedTypes, metadata)
 
 			return violation == nil
 		})
@@ -618,13 +1099,13 @@ func scalarSinkViolation(
 	node ast.Node,
 	evaluation *scalarEvaluation,
 	generatedTypes map[string]bool,
-	fieldsByPackage map[string]map[string]map[string]bool,
+	metadata generatedScalarMetadata,
 ) error {
 	switch typed := node.(type) {
 	case *ast.CompositeLit:
-		return scalarCompositeSinkViolation(source, typed, evaluation, generatedTypes, fieldsByPackage)
+		return scalarCompositeSinkViolation(source, typed, evaluation, generatedTypes, metadata)
 	case *ast.AssignStmt:
-		return scalarAssignmentSinkViolation(source, typed, evaluation, generatedTypes, fieldsByPackage)
+		return scalarAssignmentSinkViolation(source, typed, evaluation, generatedTypes, metadata)
 	default:
 		return nil
 	}
@@ -635,14 +1116,14 @@ func scalarCompositeSinkViolation(
 	composite *ast.CompositeLit,
 	evaluation *scalarEvaluation,
 	generatedTypes map[string]bool,
-	fieldsByPackage map[string]map[string]map[string]bool,
+	metadata generatedScalarMetadata,
 ) error {
 	if !isProviderWireModelType(source.file, composite.Type, generatedTypes) {
 		return nil
 	}
 
-	packagePath, typeName := generatedModelTypeReference(source.file, composite.Type, fieldsByPackage)
-	scalarFields := fieldsByPackage[packagePath][typeName]
+	packagePath, typeName := generatedModelTypeReference(source.file, composite.Type, metadata.fields)
+	scalarFields := metadata.fields[packagePath][typeName]
 
 	for _, element := range composite.Elts {
 		fieldName, ok := compositeFieldName(element)
@@ -651,7 +1132,11 @@ func scalarCompositeSinkViolation(
 		}
 
 		value := compositeValue(element)
-		if !scalarExpressionSafe(value, evaluation) {
+
+		valueEvaluation := scalarEvaluationForClosedEnum(
+			evaluation, metadata.closedEnums[packagePath][typeName][fieldName],
+		)
+		if !scalarExpressionSafe(value, valueEvaluation) {
 			return sourceError(source.fileSet, source.path, value.Pos(), generatedScalarMessage)
 		}
 	}
@@ -700,7 +1185,7 @@ func scalarAssignmentSinkViolation(
 	assignment *ast.AssignStmt,
 	evaluation *scalarEvaluation,
 	generatedTypes map[string]bool,
-	fieldsByPackage map[string]map[string]map[string]bool,
+	metadata generatedScalarMetadata,
 ) error {
 	for index, target := range assignment.Lhs {
 		if index >= len(assignment.Rhs) || !isGeneratedModelField(
@@ -710,11 +1195,23 @@ func scalarAssignmentSinkViolation(
 		}
 
 		selector, ok := unparen(target).(*ast.SelectorExpr)
-		if !ok || !generatedScalarFieldName(fieldsByPackage, selector.Sel.Name) {
+		if !ok || !generatedScalarFieldName(metadata.fields, selector.Sel.Name) {
 			continue
 		}
 
-		if !scalarExpressionSafe(assignment.Rhs[index], evaluation) {
+		closedValues, closed, resolved := generatedClosedEnumFieldValues(
+			source.file, target, generatedTypes, metadata,
+		)
+		if !resolved && generatedClosedEnumFieldName(metadata.closedEnums, selector.Sel.Name) {
+			return sourceError(source.fileSet, source.path, assignment.Rhs[index].Pos(), generatedScalarMessage)
+		}
+
+		if !closed {
+			closedValues = nil
+		}
+
+		valueEvaluation := scalarEvaluationForClosedEnum(evaluation, closedValues)
+		if !scalarExpressionSafe(assignment.Rhs[index], valueEvaluation) {
 			return sourceError(source.fileSet, source.path, assignment.Rhs[index].Pos(), generatedScalarMessage)
 		}
 	}
@@ -739,6 +1236,233 @@ func generatedScalarFieldName(fieldsByPackage map[string]map[string]map[string]b
 	}
 
 	return false
+}
+
+func scalarEvaluationForClosedEnum(evaluation *scalarEvaluation, allowedValues map[string]bool) *scalarEvaluation {
+	if len(allowedValues) == 0 {
+		return evaluation
+	}
+
+	closedEvaluation := *evaluation
+
+	closedEvaluation.values = make(map[token.Pos]bool, len(evaluation.values))
+	for position := range evaluation.values {
+		closedEvaluation.values[position] = false
+	}
+
+	closedEvaluation.functionValues = make(map[token.Pos][]scalarFunction)
+	closedEvaluation.resolving = make(map[token.Pos]bool)
+	closedEvaluation.callStack = cloneScalarCallStack(evaluation.callStack)
+	closedEvaluation.allowedEnumValues = allowedValues
+
+	return &closedEvaluation
+}
+
+func generatedClosedEnumFieldName(
+	closedEnums map[string]map[string]map[string]map[string]bool,
+	fieldName string,
+) bool {
+	for _, types := range closedEnums {
+		for _, fields := range types {
+			if fields[fieldName] != nil {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func generatedClosedEnumFieldValues(
+	file *ast.File,
+	target ast.Expr,
+	generatedTypes map[string]bool,
+	metadata generatedScalarMetadata,
+) (map[string]bool, bool, bool) {
+	var selectors []*ast.SelectorExpr
+
+	current := unparen(target)
+
+	for {
+		selector, ok := current.(*ast.SelectorExpr)
+		if !ok {
+			break
+		}
+
+		selectors = append(selectors, selector)
+		current = unparen(selector.X)
+	}
+
+	if len(selectors) == 0 {
+		return nil, false, false
+	}
+
+	identifier, ok := current.(*ast.Ident)
+	if !ok {
+		return nil, false, false
+	}
+
+	modelType, found := generatedModelTypeForIdentifier(file, identifier, generatedTypes, metadata,
+		make(map[token.Pos]bool))
+	if !found {
+		return nil, false, false
+	}
+
+	for index, selector := range slices.Backward(selectors) {
+		if index == 0 {
+			allowed, closed := metadata.closedEnums[modelType.packagePath][modelType.typeName][selector.Sel.Name]
+
+			return allowed, closed, true
+		}
+
+		modelType, found = metadata.modelFields[modelType.packagePath][modelType.typeName][selector.Sel.Name]
+		if !found {
+			return nil, false, false
+		}
+	}
+
+	return nil, false, false
+}
+
+func generatedModelTypeForIdentifier(
+	file *ast.File,
+	identifier *ast.Ident,
+	generatedTypes map[string]bool,
+	metadata generatedScalarMetadata,
+	visiting map[token.Pos]bool,
+) (generatedModelFieldType, bool) {
+	position := identifierObjectPosition(identifier)
+	if position == token.NoPos || visiting[position] {
+		return generatedModelFieldType{packagePath: "", typeName: ""}, false
+	}
+
+	visiting[position] = true
+	defer delete(visiting, position)
+
+	if identifier.Obj == nil {
+		return generatedModelTypeForExpression(file, identifier, generatedTypes, metadata, visiting)
+	}
+
+	return generatedModelTypeForDeclaration(file, identifier.Obj.Decl, position, generatedTypes, metadata, visiting)
+}
+
+func generatedModelTypeForDeclaration(
+	file *ast.File,
+	declaration any,
+	position token.Pos,
+	generatedTypes map[string]bool,
+	metadata generatedScalarMetadata,
+	visiting map[token.Pos]bool,
+) (generatedModelFieldType, bool) {
+	switch typed := declaration.(type) {
+	case *ast.Field:
+		return generatedModelTypeForExpression(file, typed.Type, generatedTypes, metadata, visiting)
+	case *ast.ValueSpec:
+		return generatedModelTypeForValueSpec(file, typed, position, generatedTypes, metadata, visiting)
+	case *ast.AssignStmt:
+		return generatedModelTypeForAssignment(file, typed, position, generatedTypes, metadata, visiting)
+	}
+
+	return generatedModelFieldType{packagePath: "", typeName: ""}, false
+}
+
+func generatedModelTypeForValueSpec(
+	file *ast.File,
+	value *ast.ValueSpec,
+	position token.Pos,
+	generatedTypes map[string]bool,
+	metadata generatedScalarMetadata,
+	visiting map[token.Pos]bool,
+) (generatedModelFieldType, bool) {
+	for index, name := range value.Names {
+		if identifierObjectPosition(name) != position {
+			continue
+		}
+
+		if value.Type != nil {
+			return generatedModelTypeForExpression(file, value.Type, generatedTypes, metadata, visiting)
+		}
+
+		if index < len(value.Values) {
+			return generatedModelTypeForExpression(file, value.Values[index], generatedTypes, metadata, visiting)
+		}
+	}
+
+	return generatedModelFieldType{packagePath: "", typeName: ""}, false
+}
+
+func generatedModelTypeForAssignment(
+	file *ast.File,
+	assignment *ast.AssignStmt,
+	position token.Pos,
+	generatedTypes map[string]bool,
+	metadata generatedScalarMetadata,
+	visiting map[token.Pos]bool,
+) (generatedModelFieldType, bool) {
+	for index, target := range assignment.Lhs {
+		name, isIdentifier := unparen(target).(*ast.Ident)
+		if !isIdentifier || identifierObjectPosition(name) != position || index >= len(assignment.Rhs) {
+			continue
+		}
+
+		return generatedModelTypeForExpression(file, assignment.Rhs[index], generatedTypes, metadata, visiting)
+	}
+
+	return generatedModelFieldType{packagePath: "", typeName: ""}, false
+}
+
+func generatedModelTypeForExpression(
+	file *ast.File,
+	expression ast.Expr,
+	generatedTypes map[string]bool,
+	metadata generatedScalarMetadata,
+	visiting map[token.Pos]bool,
+) (generatedModelFieldType, bool) {
+	expression = unparen(expression)
+	switch typed := expression.(type) {
+	case *ast.StarExpr, *ast.ArrayType:
+		return generatedModelTypeForExpression(file, generatedModelTypeElement(typed), generatedTypes, metadata, visiting)
+	case *ast.CompositeLit:
+		packagePath, typeName := generatedModelTypeReference(file, typed.Type, metadata.fields)
+
+		return generatedModelFieldType{packagePath: packagePath, typeName: typeName},
+			generatedModelMetadataType(metadata, packagePath, typeName)
+	case *ast.Ident:
+		if typed.Obj != nil && (typed.Obj.Kind == ast.Var || typed.Obj.Kind == ast.Con) {
+			return generatedModelTypeForIdentifier(file, typed, generatedTypes, metadata, visiting)
+		}
+
+		packagePath, typeName := generatedModelTypeReference(file, typed, metadata.fields)
+
+		return generatedModelFieldType{packagePath: packagePath, typeName: typeName},
+			generatedModelMetadataType(metadata, packagePath, typeName)
+	case *ast.SelectorExpr:
+		packagePath := importedPath(file, typed.X)
+		if packagePath == "" {
+			return generatedModelFieldType{packagePath: "", typeName: ""}, false
+		}
+
+		return generatedModelFieldType{packagePath: packagePath, typeName: typed.Sel.Name},
+			generatedModelMetadataType(metadata, packagePath, typed.Sel.Name)
+	default:
+		return generatedModelFieldType{packagePath: "", typeName: ""}, false
+	}
+}
+
+func generatedModelTypeElement(expression ast.Expr) ast.Expr {
+	switch typed := expression.(type) {
+	case *ast.StarExpr:
+		return typed.X
+	case *ast.ArrayType:
+		return typed.Elt
+	default:
+		return expression
+	}
+}
+
+func generatedModelMetadataType(metadata generatedScalarMetadata, packagePath, typeName string) bool {
+	return metadata.fields[packagePath][typeName] != nil || metadata.modelFields[packagePath][typeName] != nil ||
+		metadata.modelTypes[packagePath][typeName]
 }
 
 func newScalarEvaluation(
@@ -767,13 +1491,14 @@ func newScalarBodyEvaluation(
 	callerInputs bool,
 ) *scalarEvaluation {
 	evaluation := &scalarEvaluation{
-		index:          index,
-		source:         source,
-		values:         make(map[token.Pos]bool),
-		functionValues: make(map[token.Pos][]scalarFunction),
-		writes:         make(map[token.Pos][]ast.Expr),
-		resolving:      make(map[token.Pos]bool),
-		callStack:      cloneScalarCallStack(callStack),
+		index:             index,
+		source:            source,
+		values:            make(map[token.Pos]bool),
+		functionValues:    make(map[token.Pos][]scalarFunction),
+		writes:            make(map[token.Pos][]ast.Expr),
+		resolving:         make(map[token.Pos]bool),
+		callStack:         cloneScalarCallStack(callStack),
+		allowedEnumValues: nil,
 	}
 	if functionType == nil {
 		return evaluation
@@ -899,17 +1624,35 @@ func scalarExpressionSafe(expression ast.Expr, evaluation *scalarEvaluation) boo
 	expression = unparen(expression)
 	switch typed := expression.(type) {
 	case *ast.Ident:
-		return scalarIdentifierSafe(typed, evaluation)
+		return scalarIdentifierExpressionSafe(typed, evaluation)
+	case *ast.CompositeLit:
+		return evaluation.allowedEnumValues == nil && scalarGeneratedModelValue(typed, evaluation)
 	case *ast.SelectorExpr:
-		if scalarGeneratedConstant(typed, evaluation) {
-			return true
-		}
-
-		return scalarExpressionSafe(typed.X, evaluation)
+		return scalarSelectorExpressionSafe(typed, evaluation)
 	case *ast.CallExpr:
 		return scalarCallSafe(typed, evaluation)
+	case *ast.StarExpr, *ast.UnaryExpr, *ast.IndexExpr, *ast.TypeAssertExpr:
+		return scalarWrappedExpressionSafe(typed, evaluation)
+	default:
+		return false
+	}
+}
+
+func scalarIdentifierExpressionSafe(identifier *ast.Ident, evaluation *scalarEvaluation) bool {
+	return (evaluation.allowedEnumValues == nil && scalarGeneratedModelValue(identifier, evaluation)) ||
+		scalarIdentifierSafe(identifier, evaluation)
+}
+
+func scalarSelectorExpressionSafe(selector *ast.SelectorExpr, evaluation *scalarEvaluation) bool {
+	return scalarGeneratedConstant(selector, evaluation) || scalarExpressionSafe(selector.X, evaluation)
+}
+
+func scalarWrappedExpressionSafe(expression ast.Expr, evaluation *scalarEvaluation) bool {
+	switch typed := expression.(type) {
 	case *ast.StarExpr:
 		return scalarExpressionSafe(typed.X, evaluation)
+	case *ast.UnaryExpr:
+		return typed.Op == token.AND && scalarExpressionSafe(typed.X, evaluation)
 	case *ast.IndexExpr:
 		return scalarExpressionSafe(typed.X, evaluation)
 	case *ast.TypeAssertExpr:
@@ -917,6 +1660,24 @@ func scalarExpressionSafe(expression ast.Expr, evaluation *scalarEvaluation) boo
 	default:
 		return false
 	}
+}
+
+func scalarGeneratedModelValue(expression ast.Expr, evaluation *scalarEvaluation) bool {
+	var (
+		modelType generatedModelFieldType
+		found     bool
+	)
+
+	switch typed := unparen(expression).(type) {
+	case *ast.Ident:
+		modelType, found = generatedModelTypeForIdentifier(evaluation.source.file, typed, nil,
+			evaluation.index.metadata, make(map[token.Pos]bool))
+	case *ast.CompositeLit:
+		modelType, found = generatedModelTypeForExpression(evaluation.source.file, typed.Type, nil,
+			evaluation.index.metadata, make(map[token.Pos]bool))
+	}
+
+	return found && generatedModelMetadataType(evaluation.index.metadata, modelType.packagePath, modelType.typeName)
 }
 
 func scalarIdentifierSafe(identifier *ast.Ident, evaluation *scalarEvaluation) bool {
@@ -980,25 +1741,40 @@ func scalarGlobalSafe(name string, evaluation *scalarEvaluation) bool {
 	defer delete(evaluation.resolving, position)
 
 	return scalarExpressionSafe(global.spec.Values[global.index], &scalarEvaluation{
-		index:          evaluation.index,
-		source:         global.source,
-		values:         make(map[token.Pos]bool),
-		functionValues: make(map[token.Pos][]scalarFunction),
-		writes:         make(map[token.Pos][]ast.Expr),
-		resolving:      evaluation.resolving,
-		callStack:      evaluation.callStack,
+		index:             evaluation.index,
+		source:            global.source,
+		values:            make(map[token.Pos]bool),
+		functionValues:    make(map[token.Pos][]scalarFunction),
+		writes:            make(map[token.Pos][]ast.Expr),
+		resolving:         evaluation.resolving,
+		callStack:         evaluation.callStack,
+		allowedEnumValues: evaluation.allowedEnumValues,
 	})
 }
 
 func scalarGeneratedConstant(selector *ast.SelectorExpr, evaluation *scalarEvaluation) bool {
 	packagePath := importedPath(evaluation.source.file, selector.X)
+	if packagePath == "" || !evaluation.index.metadata.constants[packagePath][selector.Sel.Name] {
+		return false
+	}
 
-	return packagePath != "" && evaluation.index.metadata.constants[packagePath][selector.Sel.Name]
+	if evaluation.allowedEnumValues == nil {
+		return true
+	}
+
+	value, found := evaluation.index.metadata.constantValues[packagePath][selector.Sel.Name]
+
+	return found && evaluation.allowedEnumValues[value]
 }
 
 func scalarCallSafe(call *ast.CallExpr, evaluation *scalarEvaluation) bool {
 	if scalarConversionCall(call, evaluation) {
 		return len(call.Args) == 1 && scalarExpressionSafe(call.Args[0], evaluation)
+	}
+
+	if scalarJSONMarshalCall(call, evaluation) {
+		return evaluation.allowedEnumValues == nil && len(call.Args) == 1 &&
+			scalarExpressionSafe(call.Args[0], evaluation)
 	}
 
 	targets := scalarCallTargets(call.Fun, evaluation, make(map[token.Pos]bool))
@@ -1013,6 +1789,15 @@ func scalarCallSafe(call *ast.CallExpr, evaluation *scalarEvaluation) bool {
 	}
 
 	return true
+}
+
+func scalarJSONMarshalCall(call *ast.CallExpr, evaluation *scalarEvaluation) bool {
+	selector, ok := unparen(call.Fun).(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "Marshal" {
+		return false
+	}
+
+	return importedPath(evaluation.source.file, selector.X) == "encoding/json"
 }
 
 func scalarConversionCall(call *ast.CallExpr, evaluation *scalarEvaluation) bool {
@@ -1134,7 +1919,7 @@ func scalarFunctionResultSafe(
 	arguments []ast.Expr,
 	caller *scalarEvaluation,
 ) bool {
-	if target.callerSupplied {
+	if target.callerSupplied && caller.allowedEnumValues == nil {
 		return true
 	}
 
@@ -1165,6 +1950,7 @@ func scalarFunctionResultSafe(
 	}
 
 	evaluation := scalarFunctionEvaluation(target, arguments, argumentValues, caller, callStack)
+	evaluation.allowedEnumValues = caller.allowedEnumValues
 
 	return scalarFunctionBodySafe(functionType, body, evaluation)
 }

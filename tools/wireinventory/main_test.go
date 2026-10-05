@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const loginCloudRequestModel = "LoginCloudRequest"
@@ -22,6 +23,153 @@ func TestProductionWireInventoryPasses(t *testing.T) {
 	err := checkRepository("../..")
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+//nolint:paralleltest // These probes temporarily modify the production tree scanned by the gate.
+func TestWireInventoryDefaultCommandScansShippedModules(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, probe := range shippedModuleProbeCases(root) {
+		t.Run(probe.name, func(t *testing.T) {
+			runShippedModuleProbe(t, root, probe)
+		})
+	}
+}
+
+type shippedModuleProbe struct {
+	name       string
+	directory  string
+	filename   string
+	source     string
+	compileDir string
+	want       string
+}
+
+func shippedModuleProbeCases(root string) []shippedModuleProbe {
+	cliDirectory := filepath.Join(root, "cmd", "go-tplink")
+	exampleDirectory := filepath.Join(root, "examples", "list-devices")
+
+	return []shippedModuleProbe{
+		{
+			name: "standalone CLI outbound call", directory: cliDirectory,
+			filename: "wireinventory_cli_probe.go", compileDir: cliDirectory,
+			source: `package main
+import "net/http"
+func wireInventoryCLIProbe() { _, _ = http.Get("https://probe.invalid") }
+`,
+			want: "HTTP constructor or convenience request is outside the registered cloud transport",
+		},
+		{
+			name: "shipped example outbound call", directory: exampleDirectory,
+			filename: "wireinventory_example_probe.go", compileDir: root,
+			source: `package main
+import "net/http"
+func wireInventoryExampleProbe() { _, _ = http.Get("https://probe.invalid") }
+`,
+			want: "HTTP constructor or convenience request is outside the registered cloud transport",
+		},
+		{
+			name: "aliased transport helper with unregistered authority", directory: exampleDirectory,
+			filename: "wireinventory_alias_probe.go", compileDir: root,
+			source: `package main
+import (
+  "context"
+  "net/http"
+  "net/url"
+  "github.com/portpowered/go-tplink/pkg/dependencies/cloud"
+)
+var wireInventoryAliasSend = cloud.Send
+func wireInventoryAliasProbe() {
+  _, _ = wireInventoryAliasSend(context.Background(), &http.Client{},
+    &url.URL{Scheme: "https", Host: "attacker.invalid"}, "probe", struct{}{}, nil)
+}
+`,
+			want: "cloud.Send method values and aliases are not registered network call sites",
+		},
+	}
+}
+
+func runShippedModuleProbe(t *testing.T, root string, probe shippedModuleProbe) {
+	t.Helper()
+
+	path := filepath.Join(probe.directory, probe.filename)
+
+	writeErr := os.WriteFile(path, []byte(probe.source), 0o600)
+	if writeErr != nil {
+		t.Fatal(writeErr)
+	}
+
+	t.Cleanup(func() {
+		removeErr := os.Remove(path)
+		if removeErr != nil && !os.IsNotExist(removeErr) {
+			t.Errorf("remove probe source: %v", removeErr)
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	t.Cleanup(cancel)
+
+	compile := exec.CommandContext(ctx, "go", "test", "-run=^$", "./...")
+	compile.Dir = probe.compileDir
+	compile.Env = goCommandEnvironment()
+
+	compileOutput, compileErr := compile.CombinedOutput()
+	if compileErr != nil {
+		t.Fatalf("compile probe source: %v\n%s", compileErr, compileOutput)
+	}
+
+	gate := exec.CommandContext(ctx, "go", "run", "./tools/wireinventory")
+	gate.Dir = root
+	gate.Env = goCommandEnvironment()
+
+	gateOutput, gateErr := gate.CombinedOutput()
+	if gateErr == nil || !strings.Contains(string(gateOutput), probe.want) {
+		t.Fatalf("default-root wire inventory result = %v, output = %s; want %q", gateErr, gateOutput, probe.want)
+	}
+}
+
+func goCommandEnvironment() []string {
+	return append(os.Environ(), "GOWORK=off")
+}
+
+func TestCloudSendGateRejectsAliasedTransportWithDeadDirectCall(t *testing.T) {
+	t.Parallel()
+
+	const source = `package tplink
+import (
+  "context"
+  "net/http"
+  "net/url"
+  "github.com/portpowered/go-tplink/pkg/dependencies/cloud"
+)
+type Client struct{}
+var wireInventoryAliasSend = cloud.Send
+func (client *Client) doCloudRequest() {
+  if false {
+    _, _ = cloud.Send(context.Background(), &http.Client{},
+      &url.URL{Scheme: "https", Host: "configured.invalid"}, "probe", struct{}{}, nil)
+  }
+  _, _ = wireInventoryAliasSend(context.Background(), &http.Client{},
+    &url.URL{Scheme: "https", Host: "attacker.invalid"}, "probe", struct{}{}, nil)
+}
+`
+
+	fileSet := token.NewFileSet()
+
+	file, err := parser.ParseFile(fileSet, "client.go", source, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join("pkg", "tplink", "client.go")
+
+	err = checkCloudSendReferences(path, path, fileSet, file)
+	if err == nil || !strings.Contains(err.Error(), "cloud.Send method values and aliases") {
+		t.Fatalf("checkCloudSendReferences() error = %v, want aliased transport rejection", err)
 	}
 }
 
@@ -414,15 +562,15 @@ func TestGeneratedScalarCallerValueHelpersRemainAllowed(t *testing.T) {
 
 	const source = `package fixture
 import "github.com/portpowered/go-tplink/pkg/dependencymodels"
-func passthrough(value dependencymodels.LoginCloudRequestMethod) dependencymodels.LoginCloudRequestMethod {
+func passthrough(value string) string {
   return value
 }
-func callback(value dependencymodels.LoginCloudRequestMethod) func() dependencymodels.LoginCloudRequestMethod {
-  return func() dependencymodels.LoginCloudRequestMethod { return value }
+func callback(value string) func() string {
+  return func() string { return value }
 }
-func build(value dependencymodels.LoginCloudRequestMethod) {
-  _ = dependencymodels.LoginCloudRequest{Method: passthrough(value)}
-  _ = dependencymodels.LoginCloudRequest{Method: callback(value)()}
+func build(value string) {
+  _ = dependencymodels.LoginParams{CloudUserName: passthrough(value)}
+  _ = dependencymodels.LoginParams{CloudUserName: callback(value)()}
 }
 `
 

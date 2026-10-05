@@ -688,7 +688,7 @@ func isFixedScalarSource(
 	case *ast.BasicLit:
 		return isScalarLiteral(typed)
 	case *ast.Ident:
-		return typed.Name == "true" || typed.Name == "false" || aliases[identifierObjectPosition(typed)]
+		return typed.Name == goTrueLiteral || typed.Name == goFalseLiteral || aliases[identifierObjectPosition(typed)]
 	case *ast.UnaryExpr:
 		return isFixedScalarSource(typed.X, aliases, file, generatedTypes, fixedFunctions)
 	case *ast.CallExpr:
@@ -1131,7 +1131,7 @@ func isScalarSyntaxNode(node ast.Node, aliases map[token.Pos]bool) bool {
 	case *ast.BasicLit:
 		return isScalarLiteral(typed)
 	case *ast.Ident:
-		return typed.Name == "true" || typed.Name == "false" || aliases[identifierObjectPosition(typed)]
+		return typed.Name == goTrueLiteral || typed.Name == goFalseLiteral || aliases[identifierObjectPosition(typed)]
 	default:
 		return false
 	}
@@ -1281,6 +1281,67 @@ func hasCloudSendCall(file *ast.File) bool {
 	})
 
 	return found
+}
+
+func checkCloudSendReferences(path, expectedPath string, fileSet *token.FileSet, file *ast.File) error {
+	directCalls := directCloudSendCalls(file)
+
+	return cloudSendReferenceViolation(path, expectedPath, fileSet, file, directCalls)
+}
+
+func directCloudSendCalls(file *ast.File) map[*ast.SelectorExpr]bool {
+	directCalls := make(map[*ast.SelectorExpr]bool)
+
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, isCall := node.(*ast.CallExpr)
+		if !isCall || !isCloudSendCall(file, call) {
+			return true
+		}
+
+		selector, isSelector := unparen(call.Fun).(*ast.SelectorExpr)
+		if isSelector {
+			directCalls[selector] = true
+		}
+
+		return true
+	})
+
+	return directCalls
+}
+
+func cloudSendReferenceViolation(
+	path, expectedPath string,
+	fileSet *token.FileSet,
+	file *ast.File,
+	directCalls map[*ast.SelectorExpr]bool,
+) error {
+	var violation error
+
+	ast.Inspect(file, func(node ast.Node) bool {
+		if node == nil || violation != nil {
+			return false
+		}
+
+		selector, isSelector := node.(*ast.SelectorExpr)
+		if !isSelector || selector.Sel.Name != "Send" || importedPath(file, selector.X) != cloudImportPath {
+			return true
+		}
+
+		if filepath.Clean(path) != expectedPath || !directCalls[selector] {
+			violation = sourceError(
+				fileSet,
+				path,
+				selector.Pos(),
+				"cloud.Send method values and aliases are not registered network call sites",
+			)
+
+			return false
+		}
+
+		return true
+	})
+
+	return violation
 }
 
 func isCloudSendCall(file *ast.File, call *ast.CallExpr) bool {

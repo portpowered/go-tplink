@@ -40,7 +40,27 @@ jobs:
       - name: Regenerate API models and wire inventory
         run: make generate-api
       - name: Check generated model drift
-        run: git diff --exit-code -- pkg/dependencymodels pkg/generatedwire pkg/tplink/constants.gen.go pkg/tplinkmodels cmd/go-tplink/models.gen.go
+        shell: bash
+        run: |
+          check_generated_outputs() {
+            local generated_status ignored_generated
+            generated_status="$(git status --porcelain --untracked-files=all -- "$@")"
+            ignored_generated="$(git ls-files --others --ignored --exclude-standard -- "$@")"
+            if [ -n "$generated_status" ] || [ -n "$ignored_generated" ]; then
+              echo "Regeneration changed tracked generated outputs or produced untracked generated files:"
+              if [ -n "$generated_status" ]; then
+                echo "$generated_status"
+              fi
+              if [ -n "$ignored_generated" ]; then
+                echo "Ignored generated files:"
+                echo "$ignored_generated"
+              fi
+              exit 1
+            fi
+          }
+          check_generated_outputs \
+            ':(glob)pkg/**/*.gen.go' \
+            ':(glob)cmd/go-tplink/**/*.gen.go'
       - name: Check public API compatibility
         env:
           VERSION: ${{ github.ref_name }}

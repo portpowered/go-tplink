@@ -44,10 +44,10 @@ Run these from the repository root:
 | Purpose | Command | Credentials | Notes |
 | --- | --- | --- | --- |
 | Build | `make build` | No | Builds all module packages |
-| Test | `make test` | No | Runs `go test -race ./...`; use only synthetic/offline test data |
-| Format | `make fmt` | No | Runs `go fmt ./...` |
+| Test | `make test` | No | Runs race-enabled tests for the root SDK and standalone CLI; use only synthetic/offline test data |
+| Format | `make fmt` | No | Formats the root SDK and standalone CLI modules |
 | Lint | `make lint` | No | Uses `GOLANGCI_LINT` or `golangci-lint` from `PATH`; configuration enables every linter with `linters.default: all` |
-| Combined check | `make check` | No | Runs lint, build, and test |
+| Combined check | `make check` | No | Runs blocking root SDK and CLI targets: all-linter lint, build, race tests, vet, module tidy, format, replay coverage, and wire inventory |
 | API compatibility report | `make api-compatibility` | No | Compares exported API with the previous release when one exists |
 
 Locally, `make lint` and `make check` use the executable selected by
