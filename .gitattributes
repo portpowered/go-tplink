@@ -1,1 +1,2 @@
 *.go text eol=lf
+docs/wire-model-inventory.md text eol=lf

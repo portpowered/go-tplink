@@ -1,0 +1,34 @@
+---
+title: Guides
+description: How to use the operations exposed by go-tplink.
+---
+
+# Guides
+
+Every supported operation uses an HTTP `POST` to the configured cloud base URL.
+The outer JSON `method` selects login, device enumeration, or passthrough.
+Device commands use two JSON layers: `params.requestData` is a string containing
+the command document, and `result.responseData` is a string containing the
+device response document. These guides show both the outer envelope and the
+decoded inner shapes.
+
+| Goal | Go method | Guide |
+| --- | --- | --- |
+| Create a cloud session | `Login` | [Authentication](/docs/guides/authentication) |
+| List devices and inspect advertised capabilities | `GetDevices` | [Devices](/docs/guides/devices) |
+| Turn plugs on/off, read state, reboot, rename | `TurnOn`, `TurnOff`, `GetPowerState`, `Reboot`, `SetAlias` | [Plug and device operations](/docs/guides/plugs) |
+| Read or change bulb state | `GetLightState`, `GetBrightness`, `GetColorTemp`, `GetColor`, `SetBrightness`, `SetColorTemp`, `SetColor`, `SetLightState` | [Lighting operations](/docs/guides/lighting) |
+| Use the standalone terminal command | `go-tplink` | [Terminal CLI](/docs/guides/cli) |
+| Handle cloud, device, or transport failures | Any operation | [Errors and token handling](/docs/guides/errors) |
+| Update from v0.2 | Transport configuration | [Upgrade to v0.3](/docs/guides/upgrading) |
+
+The generated [cloud request API reference](/docs/openapi/cloud-request/sendCloudRequest)
+documents the shared HTTP operation and envelope.
+
+## Evidence
+
+**Implementation-derived contract:** the payloads describe shapes assembled
+and decoded by this client and its synthetic offline replay fixtures. The
+fixtures are not live TP-Link captures, and the contract is not vendor-issued
+or verified against live captures. Device behavior can vary by model, region,
+account, and firmware.

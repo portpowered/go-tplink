@@ -1,0 +1,73 @@
+openapi: 3.1.0
+info:
+  title: TP-Link Kasa Cloud API wire models
+  version: 0.1.0
+  description: >-
+    Implementation-derived schema components for the current client. These
+    models and synthetic replay fixtures are not vendor-issued or verified
+    against live captures.
+components:
+  schemas:
+    CloudRequest:
+      description: Discriminated request envelope for the single POST endpoint.
+      oneOf:
+        - $ref: './authentication.openapi.yaml#/components/schemas/LoginCloudRequest'
+        - $ref: './devices.openapi.yaml#/components/schemas/GetDeviceListCloudRequest'
+        - $ref: './passthrough.openapi.yaml#/components/schemas/PassthroughCloudRequest'
+      discriminator:
+        propertyName: method
+        mapping:
+          login: './authentication.openapi.yaml#/components/schemas/LoginCloudRequest'
+          getDeviceList: './devices.openapi.yaml#/components/schemas/GetDeviceListCloudRequest'
+          passthrough: './passthrough.openapi.yaml#/components/schemas/PassthroughCloudRequest'
+    CloudResponseEnvelope:
+      description: |
+        Expected result or cloud-error shape. Responses have no method discriminator, and response models are permissive because the client unmarshals into zero-valued Go fields; the request method identifies the expected result.
+      anyOf:
+        - $ref: './authentication.openapi.yaml#/components/schemas/LoginResponse'
+        - $ref: './devices.openapi.yaml#/components/schemas/DeviceListResponse'
+        - $ref: './passthrough.openapi.yaml#/components/schemas/PassthroughResponse'
+        - $ref: '#/components/schemas/CloudErrorResponse'
+    CloudResponse:
+      type: object
+      properties:
+        error_code:
+          type: integer
+          description: >-
+            Zero indicates success. Known cloud failures include -20004 (rate
+            limit), -20651 (expired token), -20104 (parameter error), and
+            -20601 (authentication error). Other non-zero codes may occur.
+          x-extensible-enum:
+            - 0
+            - -20004
+            - -20651
+            - -20104
+            - -20601
+          x-go-wire-constant-names:
+            - value: 0
+              name: CloudErrorCodeOK
+            - value: -20004
+              name: CloudErrorCodeRateLimited
+            - value: -20651
+              name: CloudErrorCodeTokenExpired
+            - value: -20104
+              name: CloudErrorCodeParameter
+            - value: -20601
+              name: CloudErrorCodeAuthentication
+        msg:
+          type: string
+          description: Optional cloud error message.
+    CloudErrorResponse:
+      type: object
+      required:
+        - error_code
+      properties:
+        error_code:
+          type: integer
+          not:
+            enum:
+              - 0
+          description: Non-zero cloud error code. The implementation maps several known codes and preserves other non-zero codes as generic errors.
+        msg:
+          type: string
+          description: Optional cloud error message.

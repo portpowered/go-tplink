@@ -2,13 +2,14 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', 'cmd/go-tplink/v*']
 
 permissions:
   contents: read
 
 jobs:
   verify-and-publish:
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -23,18 +24,49 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: '1.26.x'
           cache: true
+      - name: Lint SDK and wire tools with all linters (golangci-lint v2.14.0)
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          args: --allow-parallel-runners ./...
+      - name: Lint standalone CLI module with all linters (golangci-lint v2.14.0)
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          working-directory: cmd/go-tplink
+          args: --config .golangci.yml --allow-parallel-runners ./...
+      - name: Regenerate API models and wire inventory
+        run: make generate-api
+      - name: Check generated model drift
+        shell: bash
+        run: |
+          check_generated_outputs() {
+            local generated_status ignored_generated
+            generated_status="$(git status --porcelain --untracked-files=all -- "$@")"
+            ignored_generated="$(git ls-files --others --ignored --exclude-standard -- "$@")"
+            if [ -n "$generated_status" ] || [ -n "$ignored_generated" ]; then
+              echo "Regeneration changed tracked generated outputs or produced untracked generated files:"
+              if [ -n "$generated_status" ]; then
+                echo "$generated_status"
+              fi
+              if [ -n "$ignored_generated" ]; then
+                echo "Ignored generated files:"
+                echo "$ignored_generated"
+              fi
+              exit 1
+            fi
+          }
+          check_generated_outputs \
+            ':(glob)pkg/**/*.gen.go' \
+            ':(glob)cmd/go-tplink/**/*.gen.go'
       - name: Check public API compatibility
         env:
           VERSION: ${{ github.ref_name }}
         run: go run ./tools/compatibility -policy release -base previous-release -version "$VERSION" -module "$PUBLIC_MODULE" -packages "$PUBLIC_PACKAGES"
-      - name: Test
-        run: go test -race ./...
-      - name: Enforce replay coverage floor
-        run: go run ./tools/replaycoverage
-      - name: Vet
-        run: go vet ./...
+      - name: Run all module build, race, lint, inventory, coverage, and metadata checks
+        run: make check
       - name: Verify public module from a consumer
         env:
           VERSION: ${{ github.ref_name }}
@@ -77,4 +109,80 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ github.ref_name }}
-        run: gh release create "$VERSION" --verify-tag --generate-notes
+        run: |
+          gh release create "$VERSION" --verify-tag --generate-notes \
+            --notes "Transport type identities changed in v0.3. See the [upgrade guide](https://portpowered.github.io/go-tplink/docs/guides/upgrading/)."
+
+  verify-cli-and-publish:
+    if: startsWith(github.ref, 'refs/tags/cmd/go-tplink/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GOWORK: 'off'
+      GOTOOLCHAIN: local
+      CLI_MODULE: github.com/portpowered/go-tplink/cmd/go-tplink
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cmd/go-tplink/go.mod
+          cache: true
+      - name: Lint CLI module with all linters (golangci-lint v2.14.0)
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          working-directory: cmd/go-tplink
+          args: --config .golangci.yml --allow-parallel-runners ./...
+      - name: Build CLI module
+        run: go build ./...
+        working-directory: cmd/go-tplink
+      - name: Test CLI module
+        run: go test -race ./...
+        working-directory: cmd/go-tplink
+      - name: Vet CLI module
+        run: go vet ./...
+        working-directory: cmd/go-tplink
+      - name: Check CLI formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l *.go)"
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted Go files:"
+            echo "$unformatted"
+            exit 1
+          fi
+        working-directory: cmd/go-tplink
+      - name: Check CLI module metadata
+        run: go mod tidy
+        working-directory: cmd/go-tplink
+      - name: Ensure CLI module metadata is tidy
+        run: git diff --exit-code -- cmd/go-tplink/go.mod cmd/go-tplink/go.sum
+      - name: Verify the published CLI from the Go proxy
+        env:
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          version="${TAG##*/}"
+          check_dir="$(mktemp -d)"
+          mkdir -p "$check_dir/bin"
+          export GOBIN="$check_dir/bin"
+          module_ready=false
+          for attempt in {1..6}; do
+            if go install "${CLI_MODULE}@${version}"; then
+              module_ready=true
+              break
+            fi
+            echo "CLI module not available through the Go proxy yet (attempt ${attempt}/6)"
+            sleep 10
+          done
+          if [ "$module_ready" != true ]; then
+            echo "Could not install the tagged CLI after six attempts."
+            exit 1
+          fi
+          "$GOBIN/go-tplink" --help
+      - name: Publish CLI release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --verify-tag --generate-notes

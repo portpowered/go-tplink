@@ -1,0 +1,95 @@
+---
+title: Plug and device operations
+description: Turn plugs on/off, read power state, reboot, and set an alias.
+---
+
+# Plug and device operations
+
+These operations use the authenticated cloud method `passthrough`. The outer
+`requestData` field is a **string** that contains one command JSON object. The
+`token` is sent separately in the HTTP URL.
+
+Example outer request for turning on:
+
+```json
+{
+  "method": "passthrough",
+  "params": {
+    "deviceId": "<device-id>",
+    "requestData": "{\"system\":{\"set_relay_state\":{\"state\":1}}}"
+  }
+}
+```
+
+After decoding `params.requestData`, the command is
+`{"system":{"set_relay_state":{"state":1}}}`. All operations below use that
+same outer envelope; only the device ID and command change.
+
+A successful relay acknowledgement is returned in the outer envelope as
+`result.responseData`, also a JSON-encoded string:
+
+```json
+{"error_code":0,"result":{"responseData":"{\"system\":{\"set_relay_state\":{\"err_code\":0}}}"}}
+```
+
+After decoding `result.responseData`, the payload is
+`{"system":{"set_relay_state":{"err_code":0}}}`.
+
+## Turn on and turn off
+
+`TurnOn` takes `tplink.TurnOnRequest{Auth, DeviceID}`; `TurnOff` takes
+`tplink.TurnOffRequest{Auth, DeviceID}`. Both return only an `error`.
+
+| Method | Decoded `requestData` | Meaning |
+| --- | --- | --- |
+| `TurnOn` | `{"system":{"set_relay_state":{"state":1}}}` | 1 requests on |
+| `TurnOff` | `{"system":{"set_relay_state":{"state":0}}}` | 0 requests off |
+
+The acknowledgement in decoded `result.responseData` is under
+`system.set_relay_state` and has integer `err_code` plus optional string
+`err_msg`. Nonzero codes return an error. The method does not read back the
+state; use `GetPowerState` if you need the reported state.
+
+## Read power state
+
+`GetPowerState` takes `tplink.GetPowerStateRequest{Auth, DeviceID}` and returns
+`tplinkmodels.PowerState` plus an `error`. It sends:
+
+```json
+{"system":{"get_sysinfo":""}}
+```
+
+The response is decoded from `system.get_sysinfo` in `result.responseData`.
+`tplinkmodels.SysInfo` maps these fields:
+
+| JSON field | Go field | Type | Use |
+| --- | --- | --- | --- |
+| `sw_ver` | `SwVer` | `string` | Parsed, not returned by `PowerState` |
+| `hw_ver` | `HwVer` | `string` | Parsed, not returned by `PowerState` |
+| `model` | `Model` | `string` | Parsed, not returned by `PowerState` |
+| `deviceId` | `DeviceID` | `string` | Parsed, not returned by `PowerState` |
+| `alias` | `Alias` | `string` | Parsed, not returned by `PowerState` |
+| `relay_state` | `RelayState` | `int` | `IsOn` is true only if value equals 1 |
+| `on_time` | `OnTime` | `int` | Returned as `PowerState.OnTime` |
+| `err_code` | `ErrCode` | `int` | Nonzero becomes a device error |
+
+The Go result is `tplinkmodels.PowerState{IsOn bool, OnTime int}`. The fixture
+for a successful sysinfo response is synthetic.
+
+## Reboot
+
+`Reboot` takes `tplink.RebootRequest{Auth, DeviceID}` and returns an `error`.
+It sends `{"system":{"reboot":{"delay":1}}}` (the integer delay is fixed at 1).
+The acknowledgement is under `system.reboot` and uses `err_code` plus optional
+`err_msg`. The method returns no reboot status.
+
+## Set alias
+
+`SetAlias` takes `tplink.SetAliasRequest{Auth, DeviceID, Alias}` and returns an
+`error`. `Alias` is a string. It sends
+`{"system":{"set_dev_alias":{"alias":"Desk Plug"}}}`; the acknowledgement is
+under `system.set_dev_alias`. The method does not return an updated device;
+call `GetDevices` to retrieve a fresh list.
+
+See the generated [cloud request API reference](/docs/openapi/cloud-request/sendCloudRequest)
+for the shared endpoint definition.

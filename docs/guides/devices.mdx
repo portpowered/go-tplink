@@ -1,0 +1,83 @@
+---
+title: Enumerate devices
+description: List account devices and inspect their type and advertised capabilities.
+---
+
+# Enumerate devices
+
+Call `client.GetDevices(ctx, tplink.GetDevicesRequest{Auth: auth})`. It returns
+`tplink.GetDevicesResult{Devices []tplinkmodels.Device}` and an `error`. The
+client sends an authenticated `POST` with no `params`; the token is the `token`
+query parameter.
+
+```json
+{"method":"getDeviceList"}
+```
+
+The cloud response's `result.deviceList` is decoded into `[]tplinkmodels.Device`.
+An empty list is valid. These are the device fields represented by the Go
+model; missing fields decode to zero values. Fields not declared by the model
+are ignored.
+
+| JSON field | Go field | Go type |
+| --- | --- | --- |
+| `deviceType` | `DeviceType` | `string` |
+| `deviceId` | `DeviceID` | `string` |
+| `alias` | `Alias` | `string` |
+| `deviceModel` | `DeviceModel` | `string` |
+| `deviceMac` | `DeviceMac` | `string` |
+| `fwVer` | `FwVer` | `string` |
+| `deviceHwVer` | `DeviceHwVer` | `string` |
+| `hwId` | `HwID` | `string` |
+| `fwId` | `FwID` | `string` |
+| `oemId` | `OemID` | `string` |
+| `appServerUrl` | `AppServerURL` | `string` |
+| `deviceRegion` | `DeviceRegion` | `string` |
+| `status` | `Status` | `int` |
+| `isSameRegion` | `IsSameRegion` | `bool` |
+| `is_dimmable` | `IsDimmable` | `int` (optional) |
+| `is_color` | `IsColor` | `int` (optional) |
+| `is_variable_color_temp` | `IsVariableColor` | `int` (optional) |
+| `brightness` | `Brightness` | `int` (optional) |
+
+`appServerUrl` is returned as metadata; this client does not redirect to it.
+`status` is exposed as a raw integer; the helper assigns it no online/offline
+meaning.
+
+## Classification and capability rules
+
+`tplinkmodels.ClassifyDevice` returns `EndpointTypePlug` for
+`IOT.SMARTPLUGSWITCH` and `IOT.RANGEEXTENDER.SMARTPLUG`, `EndpointTypeBulb` for
+`IOT.SMARTBULB`, and `EndpointTypeOther` for every other string. Unknown types
+stay in the returned list.
+
+`tplinkmodels.DetectCapabilities(device)` applies these metadata rules:
+
+| Classification | OnOff | Brightness | Color | ColorTemp |
+| --- | --- | --- | --- | --- |
+| Plug | Always true | `device.Brightness > 0` | false | false |
+| Bulb | Always true | `is_dimmable == 1` | `is_color == 1` | `is_variable_color_temp == 1` |
+| Other | false | false | false | false |
+
+Example dispatch:
+
+```go
+switch tplinkmodels.ClassifyDevice(device.DeviceType) {
+case tplinkmodels.EndpointTypePlug:
+    err = client.TurnOn(ctx, tplink.TurnOnRequest{Auth: auth, DeviceID: device.DeviceID})
+case tplinkmodels.EndpointTypeBulb:
+    err = client.SetBrightness(ctx, tplink.SetBrightnessRequest{
+        Auth: auth, DeviceID: device.DeviceID, Brightness: 60,
+    })
+case tplinkmodels.EndpointTypeOther:
+    // No plug or bulb operation is selected by this helper.
+}
+```
+
+Capability detection is an inference from list metadata, not a live command
+check or a guarantee that every firmware revision accepts every operation or
+value. Handle errors when sending a command. Replay device lists are synthetic,
+not evidence of a live device catalogue.
+
+See the generated [cloud request API reference](/docs/openapi/cloud-request/sendCloudRequest)
+for the shared endpoint definition.

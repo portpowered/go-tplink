@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"io/fs"
+	"maps"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -183,25 +184,65 @@ func closeReplayResponseBody(t *testing.T, response *http.Response) {
 
 func TestPublicMethodReplayInventory(t *testing.T) {
 	t.Parallel()
-	// Every exported network operation must map to a stored request variant.
-	operations := map[string]struct {
-		fixture string
-		variant int
-	}{
-		"Login": {"login", 0}, "GetDevices": {"getDeviceList", 0},
-		"TurnOn": {"passthrough_system_set_relay_state", 0}, "TurnOff": {"passthrough_system_set_relay_state", 1},
-		"GetPowerState": {"passthrough_system_get_sysinfo", 0}, "Reboot": {"passthrough_system_reboot", 0},
-		"SetAlias":      {"passthrough_system_set_dev_alias", 0},
-		"SetLightState": {"passthrough_lightingservice_transition_light_state", 3},
-		"SetBrightness": {"passthrough_lightingservice_transition_light_state", 0},
-		"SetColorTemp":  {"passthrough_lightingservice_transition_light_state", 1},
-		"SetColor":      {"passthrough_lightingservice_transition_light_state", 2},
-		"GetLightState": {"passthrough_lightingservice_get_light_state", 0},
-		"GetBrightness": {"passthrough_lightingservice_get_light_state", 0},
-		"GetColorTemp":  {"passthrough_lightingservice_get_light_state", 0},
-		"GetColor":      {"passthrough_lightingservice_get_light_state", 0},
+	assertPublicMethodCoverage(t, publicMethodReplayInventory())
+	assertNilLightStateFixtureVariant(t)
+}
+
+type replayMethodFixture struct {
+	fixture string
+	variant int
+}
+
+func publicMethodReplayInventory() map[string]replayMethodFixture {
+	inventory := make(map[string]replayMethodFixture)
+
+	maps.Copy(inventory, authenticationReplayInventory())
+	maps.Copy(inventory, plugReplayInventory())
+	maps.Copy(inventory, lightWriteReplayInventory())
+	maps.Copy(inventory, lightReadReplayInventory())
+
+	return inventory
+}
+
+func authenticationReplayInventory() map[string]replayMethodFixture {
+	return map[string]replayMethodFixture{
+		"Login":      {fixture: replayLoginOperation, variant: 0},
+		"GetDevices": {fixture: replayDeviceListMethod, variant: 0},
 	}
-	typeOf := reflect.TypeOf(&tplink.Client{})
+}
+
+func plugReplayInventory() map[string]replayMethodFixture {
+	return map[string]replayMethodFixture{
+		"TurnOn":        {fixture: replayOperationRelay, variant: 0},
+		"TurnOff":       {fixture: replayOperationRelay, variant: 1},
+		"GetPowerState": {fixture: replayOperationPower, variant: 0},
+		"Reboot":        {fixture: replayOperationReboot, variant: 0},
+		"SetAlias":      {fixture: replayOperationAlias, variant: 0},
+	}
+}
+
+func lightWriteReplayInventory() map[string]replayMethodFixture {
+	return map[string]replayMethodFixture{
+		"SetLightState": {fixture: replayOperationLightSet, variant: 3},
+		"SetBrightness": {fixture: replayOperationLightSet, variant: 0},
+		"SetColorTemp":  {fixture: replayOperationLightSet, variant: 1},
+		"SetColor":      {fixture: replayOperationLightSet, variant: 2},
+	}
+}
+
+func lightReadReplayInventory() map[string]replayMethodFixture {
+	return map[string]replayMethodFixture{
+		"GetLightState": {fixture: replayOperationLightGet, variant: 0},
+		"GetBrightness": {fixture: replayOperationLightGet, variant: 0},
+		"GetColorTemp":  {fixture: replayOperationLightGet, variant: 0},
+		"GetColor":      {fixture: replayOperationLightGet, variant: 0},
+	}
+}
+
+func assertPublicMethodCoverage(t *testing.T, operations map[string]replayMethodFixture) {
+	t.Helper()
+
+	typeOf := reflect.TypeFor[*tplink.Client]()
 
 	var missing []string
 
@@ -220,25 +261,60 @@ func TestPublicMethodReplayInventory(t *testing.T) {
 	}
 
 	for name, entry := range operations {
-		if _, ok := typeOf.MethodByName(name); !ok {
-			t.Errorf("stale method inventory %s", name)
-		}
+		assertMethodFixtureVariant(t, typeOf, name, entry.fixture, entry.variant)
+	}
+}
 
-		data, err := fixtureFiles.ReadFile("fixtures/synthetic/synthetic_tplink_" + entry.fixture + ".json")
-		if err != nil {
-			t.Fatal(err)
-		}
+func assertMethodFixtureVariant(
+	t *testing.T,
+	typeOf reflect.Type,
+	name, fixture string,
+	variant int,
+) {
+	t.Helper()
 
-		var pair fixtureExchange
+	if _, ok := typeOf.MethodByName(name); !ok {
+		t.Errorf("stale method inventory %s", name)
+	}
 
-		decodeErr := json.Unmarshal(data, &pair)
-		if decodeErr != nil {
-			t.Fatal(decodeErr)
-		}
+	path := "fixtures/synthetic/synthetic_tplink_" + fixture + ".json"
 
-		if entry.variant >= len(pair.Request.Bodies) {
-			t.Errorf("%s variant %d is absent", name, entry.variant)
-		}
+	data, err := fixtureFiles.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var pair fixtureExchange
+
+	decodeErr := json.Unmarshal(data, &pair)
+	if decodeErr != nil {
+		t.Fatal(decodeErr)
+	}
+
+	if variant >= len(pair.Request.Bodies) {
+		t.Errorf("%s variant %d is absent", name, variant)
+	}
+}
+
+func assertNilLightStateFixtureVariant(t *testing.T) {
+	t.Helper()
+
+	const fixturePath = "fixtures/synthetic/synthetic_tplink_passthrough_lightingservice_transition_light_state.json"
+
+	data, err := fixtureFiles.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var lightCommands fixtureExchange
+
+	decodeErr := json.Unmarshal(data, &lightCommands)
+	if decodeErr != nil {
+		t.Fatal(decodeErr)
+	}
+
+	if len(lightCommands.Request.Bodies) <= 5 {
+		t.Error("SetLightState nil-input variant 5 is absent")
 	}
 }
 
@@ -410,30 +486,25 @@ func TestReplayFixtureRejectsRequestOutsidePair(t *testing.T) {
 	t.Parallel()
 
 	transport := newReplayTransport()
-	transport.expectSequence("getDeviceList")
-
-	request := func(origin, token string) *http.Request {
-		req := newReplayTestRequest(
-			t, http.MethodPost, origin+"?token="+token,
-			strings.NewReader(`{"method":"getDeviceList"}`),
-		)
-		req.Header.Set("Content-Type", "application/json")
-
-		return req
-	}
+	transport.expectSequence(replayDeviceListMethod)
 
 	for _, bad := range []*http.Request{
-		request("https://wrong.example.invalid", "test-token"),
-		request(replayBaseURL, ""),
-		request(replayBaseURL, "wrong-token"),
+		newReplayTokenRequest(t, "https://wrong.example.invalid", replayTestToken),
+		newReplayTokenRequest(t, replayBaseURL+"/unexpected", replayTestToken),
+		newReplayTokenRequest(t, replayBaseURL, ""),
+		newReplayTokenRequest(t, replayBaseURL, "wrong-token"),
 	} {
 		assertReplayRoundTripRejected(t, transport, bad, "mismatched request")
 	}
 
+	extraHeader := newReplayTokenRequest(t, replayBaseURL, replayTestToken)
+	extraHeader.Header.Set("X-Unexpected", "value")
+	assertReplayRoundTripRejected(t, transport, extraHeader, "unexpected request header")
+
 	unexpectedBody := newReplayTestRequest(
 		t,
 		http.MethodPost,
-		replayBaseURL+"?token=test-token",
+		replayBaseURL+"/?token=test-token",
 		strings.NewReader(`{"method":"getDeviceList","unexpected":true}`),
 	)
 
@@ -441,7 +512,7 @@ func TestReplayFixtureRejectsRequestOutsidePair(t *testing.T) {
 
 	assertReplayRoundTripRejected(t, transport, unexpectedBody, "mismatched body")
 
-	response, err := transport.RoundTrip(request(replayBaseURL, "test-token"))
+	response, err := transport.RoundTrip(newReplayTokenRequest(t, replayBaseURL, replayTestToken))
 	if err != nil {
 		closeReplayResponseBody(t, response)
 		t.Fatal(err)
@@ -463,7 +534,24 @@ func TestReplayFixtureRejectsRequestOutsidePair(t *testing.T) {
 		t.Fatal(assertionErr)
 	}
 
-	assertReplayRoundTripRejected(t, transport, request(replayBaseURL, "test-token"), "duplicate request")
+	assertReplayRoundTripRejected(
+		t,
+		transport,
+		newReplayTokenRequest(t, replayBaseURL, replayTestToken),
+		"duplicate request",
+	)
+}
+
+func newReplayTokenRequest(t *testing.T, origin, token string) *http.Request {
+	t.Helper()
+
+	request := newReplayTestRequest(
+		t, http.MethodPost, origin+"/?token="+token,
+		strings.NewReader(`{"method":"getDeviceList"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+
+	return request
 }
 
 func assertReplayRoundTripRejected(t *testing.T, transport *replayTransport, request *http.Request, message string) {
@@ -481,7 +569,7 @@ func TestReplayFixtureRequiresExpectedCallOrderAndExhaustion(t *testing.T) {
 	t.Parallel()
 
 	transport := newReplayTransport()
-	transport.expectSequence("login", "getDeviceList")
+	transport.expectSequence(replayLoginOperation, replayDeviceListMethod)
 
 	assertionErr := transport.assertConsumed()
 	if assertionErr == nil {
@@ -491,7 +579,7 @@ func TestReplayFixtureRequiresExpectedCallOrderAndExhaustion(t *testing.T) {
 	request := newReplayTestRequest(
 		t,
 		http.MethodPost,
-		replayBaseURL+"?token=test-token",
+		replayBaseURL+"/?token=test-token",
 		strings.NewReader(`{"method":"getDeviceList"}`),
 	)
 
@@ -509,7 +597,7 @@ func TestReplayOverrideStillMatchesRequest(t *testing.T) {
 	t.Parallel()
 
 	transport := newReplayTransport()
-	transport.useResponse("getDeviceList", http.StatusTooManyRequests, []byte(`{"error_code":-20004}`))
+	transport.useResponse(replayDeviceListMethod, http.StatusTooManyRequests, []byte(`{"error_code":-20004}`))
 
 	request := newReplayTestRequest(
 		t,

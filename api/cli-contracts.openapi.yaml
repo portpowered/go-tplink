@@ -1,0 +1,95 @@
+openapi: 3.1.0
+info:
+  title: go-tplink CLI JSON contracts
+  version: 0.1.0
+  description: >-
+    Local input, saved credential, and machine-readable output shapes exposed
+    by the standalone go-tplink command. These are CLI contracts, not provider
+    cloud payloads.
+components:
+  schemas:
+    LoginCredentials:
+      type: object
+      additionalProperties: false
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+          x-go-type: string
+          description: Account password. The CLI treats this input as secret.
+    StoredCredentials:
+      type: object
+      additionalProperties: false
+      required:
+        - accessToken
+      properties:
+        accessToken:
+          type: string
+          x-go-type: string
+          description: Provider token stored locally as a secret.
+    AuthStatusOutput:
+      type: object
+      additionalProperties: false
+      required:
+        - authenticated
+      properties:
+        authenticated:
+          type: boolean
+    DeviceSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - deviceId
+        - alias
+        - model
+        - deviceType
+        - status
+      properties:
+        deviceId:
+          type: string
+        alias:
+          type: string
+        model:
+          type: string
+        deviceType:
+          type: string
+        status:
+          type: integer
+    PowerStateOutput:
+      type: object
+      additionalProperties: false
+      required:
+        - isOn
+        - onTime
+      properties:
+        isOn:
+          type: boolean
+        onTime:
+          type: integer
+    LightStateOutput:
+      type: object
+      additionalProperties: false
+      required:
+        - isOn
+        - brightness
+        - hue
+        - saturation
+        - colorTemp
+        - mode
+      properties:
+        isOn:
+          type: boolean
+        brightness:
+          type: integer
+        hue:
+          type: integer
+        saturation:
+          type: integer
+        colorTemp:
+          type: integer
+        mode:
+          type: string

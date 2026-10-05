@@ -18,16 +18,12 @@ device workflows.
 Requires Go 1.24 or later.
 
 ```sh
-go get github.com/portpowered/go-tplink@v0.1.0
+go get github.com/portpowered/go-tplink@latest
 ```
 
 The public client is in `github.com/portpowered/go-tplink/pkg/tplink`; provider
 models and typed errors are in
 `github.com/portpowered/go-tplink/pkg/tplinkmodels`.
-Request and result structs are generated from
-[`api/client-models.openapi.yaml`](api/client-models.openapi.yaml); cloud wire
-structs are generated separately from [`api/openapi.yaml`](api/openapi.yaml).
-Run `make generate-api` after changing either schema.
 
 ## Usage
 
@@ -71,12 +67,19 @@ func listDevices(ctx context.Context, email, password string) error {
 ```
 
 Pass the same `AuthContext` explicitly to each authenticated operation. The
-client does not store credentials or tokens. The injected HTTP dependency must
-support concurrent calls if the client is shared. See the
-[client architecture](docs/architecture.md).
+client does not store credentials or tokens. Supply an injected HTTP client
+with `tplink.WithHTTPClient` when the application needs custom transport
+behavior; use `tplink.WithBaseURL` for a configured cloud endpoint.
 
-The [read-only device-list example](examples/README.md) shows live usage with
-credentials supplied through environment variables.
+See the [device discovery guide](https://portpowered.github.io/go-tplink/docs/guides/devices)
+for model fields and classification behavior.
+
+## Terminal CLI
+
+The separate `go-tplink` command supports login, device discovery, plug and
+bulb operations, and device aliases. See the
+[terminal CLI guide](https://portpowered.github.io/go-tplink/docs/guides/cli)
+for current availability, credential handling, commands, and JSON output.
 
 ## Authentication and session model
 
@@ -99,52 +102,16 @@ schedules, scenes, groups, firmware management, setup or provisioning, camera
 or media streaming, or push and event subscriptions. These are limits of this
 client surface, not claims about every TP-Link product's capabilities.
 
-## Testing and evidence
-
-The automated suite uses offline HTTP tests and synthetic fixtures. The JSON
-fixtures have no verifiable capture metadata and are not presented as live
-captures. See [fixture and testing notes](docs/fixtures-and-testing.md) for
-their status, redaction rules, and local commands. The
-[protocol notes](docs/protocol.md) distinguish implementation observations
-from vendor-verified facts.
-
-## Commands
-
-Run commands from the module root:
-
-| Purpose | Command | Requires credentials |
-| --- | --- | --- |
-| Build | `make build` | No |
-| Test | `make test` | No |
-| Format | `make fmt` | No |
-| Lint | `make lint` | No |
-| Combined checks | `make check` | No |
-| Replay coverage | `make replay-coverage` | No |
-| API compatibility report | `make api-compatibility` | No |
-
-`make lint` uses golangci-lint v2.3.0 with `linters.default: all` from
-[`.golangci.yml`](.golangci.yml). CI runs the same full-repository lint command
-with that pinned version as a blocking check.
-
-The [shared API Docs action](https://github.com/portpowered/api-docs-website-github-action)
-generates the Fumadocs website from the checked-in [OpenAPI contract](api/openapi.yaml).
-The contract describes this client's implemented cloud wire format and is not
-an official or vendor-verified TP-Link specification. The documentation
-workflow also publishes a replay coverage report. Pushes to `main` refresh
-the site through GitHub Pages; pull requests build the site for verification.
-
 ## Safety and redaction
 
-Never commit account passwords, session tokens, cookies, email addresses,
-provider account IDs, device IDs, MAC addresses, or unredacted private
-responses. Avoid logging full request URLs because the provider token is sent
-in a query parameter. Keep sanitized live captures separate from synthetic
-fixtures and give each capture a neighboring provenance note.
+Keep account passwords and session tokens secret. Avoid logging full request
+URLs because the provider token is sent in a query parameter.
 
 ## Documentation
 
-- [Documentation website](https://portpowered.github.io/go-tplink/)
-- [Client architecture](docs/architecture.md)
-- [Protocol notes](docs/protocol.md)
-- [Fixtures and testing](docs/fixtures-and-testing.md)
-- [Examples](examples/README.md)
+- [Documentation and operation guides](https://portpowered.github.io/go-tplink/)
+- [Authentication](https://portpowered.github.io/go-tplink/docs/guides/authentication)
+- [Device discovery](https://portpowered.github.io/go-tplink/docs/guides/devices)
+- [Plug operations](https://portpowered.github.io/go-tplink/docs/guides/plugs)
+- [Lighting operations](https://portpowered.github.io/go-tplink/docs/guides/lighting)
+- [Error handling](https://portpowered.github.io/go-tplink/docs/guides/errors)

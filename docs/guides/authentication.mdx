@@ -1,0 +1,112 @@
+---
+title: Authentication
+description: Log in, then pass the returned token on each authenticated request.
+---
+
+# Authentication
+
+Call `client.Login(ctx, tplink.LoginRequest{Email, Password})`. Login is the only
+operation that does not require a token. It returns `tplinkmodels.LoginResult`
+and an `error`.
+
+```go
+session, err := client.Login(ctx, tplink.LoginRequest{
+    Email: email, Password: password,
+})
+if err != nil {
+    return err
+}
+auth := tplink.AuthContext{AccessToken: session.Token}
+```
+
+The default base URL uses HTTPS. `WithBaseURL` accepts a caller-configured HTTP
+or HTTPS URL, so choose HTTPS when credentials cross an untrusted network. Login
+sends a `POST` to that configured URL and omits the `token` query parameter. The
+body fields are:
+
+```json
+{
+  "method": "login",
+  "params": {
+    "appType": "Tapo_Android",
+    "cloudUserName": "<account-email>",
+    "cloudPassword": "<account-password>",
+    "terminalUUID": "go-tplink-client"
+  }
+}
+```
+
+| Field | Value or source |
+| --- | --- |
+| `method` | Fixed `login` |
+| `params.appType` | Fixed `Tapo_Android` |
+| `params.cloudUserName` | `LoginRequest.Email` |
+| `params.cloudPassword` | `LoginRequest.Password` |
+| `params.terminalUUID` | Fixed `go-tplink-client` |
+
+The Go method does not locally validate whether the email or password is
+non-empty. On success, outer `result` decodes as `tplinkmodels.LoginResult`:
+
+| JSON field | Go field | Type |
+| --- | --- | --- |
+| `accountId` | `AccountID` | `string` |
+| `token` | `Token` | `string` |
+| `email` | `Email` | `string` |
+| `regTime` | `RegTime` | `string` |
+| `countryCode` | `CountryCode` | `string` |
+
+Pass `tplink.AuthContext{AccessToken: session.Token}` in each later request's
+`Auth` field. The token is sent as URL query parameter `token`; the reusable
+client does not store credentials, retain the token, or refresh it. Keep the
+password and token secret, and redact the token from HTTP tracing and logs.
+See [errors and token handling](/docs/guides/errors).
+
+## Reauthenticate after token expiry
+
+If an authenticated call returns `TokenExpiredError`, call `Login` again with
+credentials your application retains, then use the new `LoginResult.Token`:
+
+```go
+session, err = client.Login(ctx, tplink.LoginRequest{
+    Email: email, Password: password,
+})
+if err != nil {
+    return err
+}
+auth.AccessToken = session.Token
+```
+
+The SDK does not automatically retry the failed operation; your application
+chooses whether to retry it after replacing the token.
+
+## Configure the client
+
+`NewClient` uses the generated default endpoint. Supply an HTTP implementation
+and an explicit endpoint with functional options when your application needs
+custom transport behavior or a configured region:
+
+```go
+import (
+    "net/http"
+    "time"
+
+    "github.com/portpowered/go-tplink/pkg/tplink"
+)
+
+httpClient := &http.Client{Timeout: 15 * time.Second}
+client, err := tplink.NewClient(
+    tplink.WithBaseURL(tplink.DefaultBaseURL),
+    tplink.WithHTTPClient(httpClient),
+)
+if err != nil {
+    return err
+}
+defer client.Close()
+```
+
+`WithHTTPClient` accepts any implementation of `tplink.HTTPDoer`, including
+`*http.Client`. `WithBaseURL` accepts HTTP or HTTPS URLs; use HTTPS when
+credentials cross an untrusted network.
+
+See the generated [cloud request API reference](/docs/openapi/cloud-request/sendCloudRequest)
+for the shared endpoint definition.

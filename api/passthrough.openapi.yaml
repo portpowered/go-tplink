@@ -1,0 +1,365 @@
+openapi: 3.1.0
+info:
+  title: TP-Link Kasa Cloud API wire models
+  version: 0.1.0
+  description: >-
+    Implementation-derived schema components for the current client. These
+    models and synthetic replay fixtures are not vendor-issued or verified
+    against live captures.
+components:
+  schemas:
+    PassthroughCloudRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - method
+        - params
+      properties:
+        method:
+          type: string
+          enum:
+            - passthrough
+          x-go-compat-constant-names:
+            - value: passthrough
+              name: MethodPassthrough
+        params:
+          $ref: '#/components/schemas/PassthroughParams'
+    PassthroughParams:
+      type: object
+      additionalProperties: false
+      required:
+        - deviceId
+        - requestData
+      properties:
+        deviceId:
+          type: string
+          description: Device identifier from the device-list result.
+        requestData:
+          type: string
+          x-go-type: string
+          contentMediaType: application/json
+          contentSchema:
+            $ref: '#/components/schemas/PassthroughCommand'
+          description: |
+            JSON-encoded string containing one command object. Decode the string
+            to see the PassthroughCommand schema; do not send that object in
+            place of the string. The Guides list the fields for each command.
+          example: '{"system":{"set_relay_state":{"state":1}}}'
+          x-example-evidence: synthetic
+    PassthroughCommand:
+      description: |
+        Inner JSON value after decoding params.requestData. The client sends one command under one namespace per request.
+      oneOf:
+        - $ref: '#/components/schemas/SystemGetSysInfoCommand'
+        - $ref: '#/components/schemas/SystemSetRelayStateCommand'
+        - $ref: '#/components/schemas/SystemRebootCommand'
+        - $ref: '#/components/schemas/SystemSetDevAliasCommand'
+        - $ref: '#/components/schemas/LightingGetLightStateCommand'
+        - $ref: '#/components/schemas/LightingTransitionLightStateCommand'
+    SystemGetSysInfoCommand:
+      type: object
+      additionalProperties: false
+      required:
+        - system
+      properties:
+        system:
+          x-go-compat-constant-name: NamespaceSystem
+          type: object
+          additionalProperties: false
+          required:
+            - get_sysinfo
+          properties:
+            get_sysinfo:
+              x-go-compat-constant-name: CmdGetSysInfo
+              type: string
+              enum:
+                - ''
+              description: Empty string for the read command.
+    SystemSetRelayStateCommand:
+      type: object
+      additionalProperties: false
+      required:
+        - system
+      properties:
+        system:
+          x-go-compat-constant-name: NamespaceSystem
+          type: object
+          additionalProperties: false
+          required:
+            - set_relay_state
+          properties:
+            set_relay_state:
+              x-go-compat-constant-name: CmdSetRelayState
+              type: object
+              additionalProperties: false
+              required:
+                - state
+              properties:
+                state:
+                  type: integer
+                  enum:
+                    - 0
+                    - 1
+                  description: 1 turns the relay on; 0 turns it off.
+    SystemRebootCommand:
+      type: object
+      additionalProperties: false
+      required:
+        - system
+      properties:
+        system:
+          x-go-compat-constant-name: NamespaceSystem
+          type: object
+          additionalProperties: false
+          required:
+            - reboot
+          properties:
+            reboot:
+              x-go-compat-constant-name: CmdReboot
+              type: object
+              additionalProperties: false
+              required:
+                - delay
+              properties:
+                delay:
+                  type: integer
+                  enum:
+                    - 1
+                  description: The implemented client sends a one-second delay.
+    SystemSetDevAliasCommand:
+      type: object
+      additionalProperties: false
+      required:
+        - system
+      properties:
+        system:
+          x-go-compat-constant-name: NamespaceSystem
+          type: object
+          additionalProperties: false
+          required:
+            - set_dev_alias
+          properties:
+            set_dev_alias:
+              x-go-compat-constant-name: CmdSetDevAlias
+              type: object
+              additionalProperties: false
+              required:
+                - alias
+              properties:
+                alias:
+                  type: string
+    LightingGetLightStateCommand:
+      type: object
+      additionalProperties: false
+      required:
+        - smartlife.iot.smartbulb.lightingservice
+      properties:
+        smartlife.iot.smartbulb.lightingservice:
+          x-go-compat-constant-name: NamespaceLightingService
+          type: object
+          additionalProperties: false
+          required:
+            - get_light_state
+          properties:
+            get_light_state:
+              x-go-compat-constant-name: CmdGetLightState
+              type: string
+              enum:
+                - ''
+              description: Empty string for the read command.
+    LightingTransitionLightStateCommand:
+      type: object
+      additionalProperties: false
+      required:
+        - smartlife.iot.smartbulb.lightingservice
+      properties:
+        smartlife.iot.smartbulb.lightingservice:
+          x-go-compat-constant-name: NamespaceLightingService
+          type: object
+          additionalProperties: false
+          required:
+            - transition_light_state
+          properties:
+            transition_light_state:
+              x-go-compat-constant-name: CmdTransitionLightState
+              $ref: '#/components/schemas/LightTransitionState'
+              x-go-type: '*LightTransitionState'
+              nullable: true
+    LightTransitionState:
+      type: object
+      description: >-
+        State values accepted by SetLightState. Other properties may be sent by
+        the generic method; device support depends on its capabilities.
+      properties:
+        on_off:
+          type: integer
+          enum:
+            - 0
+            - 1
+          description: 1 turns the bulb on; 0 turns it off.
+        brightness:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Brightness from 0 through 100.
+        color_temp:
+          type: integer
+          description: Color temperature in Kelvin; supported values depend on the device.
+        hue:
+          type: integer
+          minimum: 0
+          maximum: 360
+          description: Hue from 0 through 360 degrees.
+        saturation:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Saturation from 0 through 100.
+      additionalProperties: true
+    PassthroughResponse:
+      allOf:
+        - $ref: './cloud-envelope.openapi.yaml#/components/schemas/CloudResponse'
+        - type: object
+          properties:
+            result:
+              $ref: '#/components/schemas/PassthroughResult'
+    PassthroughResult:
+      type: object
+      properties:
+        responseData:
+          type: string
+          x-go-type: string
+          contentMediaType: application/json
+          contentSchema:
+            $ref: '#/components/schemas/PassthroughCommandResult'
+          description: |
+            JSON-encoded device response. Decode the string to interpret
+            PassthroughCommandResult. Device errors may also appear at the top level.
+          example: '{"system":{"get_sysinfo":{"relay_state":1,"on_time":3600,"err_code":0}}}'
+          x-example-evidence: synthetic
+    PassthroughCommandResult:
+      description: Inner JSON value after decoding result.responseData.
+      anyOf:
+        - $ref: '#/components/schemas/SystemCommandResult'
+        - $ref: '#/components/schemas/LightingCommandResult'
+        - $ref: '#/components/schemas/DeviceCommandError'
+    SystemCommandResult:
+      type: object
+      properties:
+        system:
+          x-go-compat-constant-name: NamespaceSystem
+          type: object
+          properties:
+            get_sysinfo:
+              x-go-compat-constant-name: CmdGetSysInfo
+              $ref: '#/components/schemas/SysInfo'
+            set_relay_state:
+              x-go-compat-constant-name: CmdSetRelayState
+              $ref: '#/components/schemas/CommandAcknowledgement'
+            reboot:
+              x-go-compat-constant-name: CmdReboot
+              $ref: '#/components/schemas/CommandAcknowledgement'
+            set_dev_alias:
+              x-go-compat-constant-name: CmdSetDevAlias
+              $ref: '#/components/schemas/CommandAcknowledgement'
+          additionalProperties: true
+      additionalProperties: true
+    LightingCommandResult:
+      type: object
+      properties:
+        smartlife.iot.smartbulb.lightingservice:
+          x-go-compat-constant-name: NamespaceLightingService
+          type: object
+          properties:
+            get_light_state:
+              x-go-compat-constant-name: CmdGetLightState
+              $ref: '#/components/schemas/LightState'
+            transition_light_state:
+              x-go-compat-constant-name: CmdTransitionLightState
+              $ref: '#/components/schemas/CommandAcknowledgement'
+          additionalProperties: true
+      additionalProperties: true
+    CommandAcknowledgement:
+      type: object
+      properties:
+        err_code:
+          type: integer
+          description: Zero indicates success; -1 indicates an unsupported command in the implemented client.
+          x-extensible-enum:
+            - 0
+            - -1
+          x-go-wire-constant-names:
+            - value: 0
+              name: DeviceErrorOK
+            - value: -1
+              name: DeviceErrorUnsupported
+        err_msg:
+          type: string
+      additionalProperties: true
+    DeviceCommandError:
+      type: object
+      required:
+        - err_code
+      properties:
+        err_code:
+          type: integer
+          description: Non-zero device-level error code; -1 indicates an unsupported command.
+          x-extensible-enum:
+            - -1
+          x-go-wire-constant-names:
+            - value: -1
+              name: DeviceErrorUnsupported
+        err_msg:
+          type: string
+      additionalProperties: true
+    SysInfo:
+      type: object
+      properties:
+        sw_ver:
+          type: string
+        hw_ver:
+          type: string
+        model:
+          type: string
+        deviceId:
+          type: string
+        alias:
+          type: string
+        relay_state:
+          type: integer
+          x-extensible-enum:
+            - 0
+            - 1
+          x-go-wire-constant-names:
+            - value: 0
+              name: DeviceStateOff
+            - value: 1
+              name: DeviceStateOn
+        on_time:
+          type: integer
+        err_code:
+          type: integer
+          x-extensible-enum:
+            - 0
+          x-go-wire-constant-names:
+            - value: 0
+              name: DeviceErrorOK
+      additionalProperties: true
+    LightState:
+      type: object
+      properties:
+        on_off:
+          type: integer
+        brightness:
+          type: integer
+        hue:
+          type: integer
+        saturation:
+          type: integer
+        color_temp:
+          type: integer
+        mode:
+          type: string
+        err_code:
+          type: integer
+      additionalProperties: true

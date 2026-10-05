@@ -3,12 +3,12 @@ package tplink
 import (
 	"context"
 
-	"github.com/portpowered/go-tplink/pkg/generatedwire"
+	"github.com/portpowered/go-tplink/pkg/dependencymodels"
 )
 
 // SetAlias renames a device.
 func (client *Client) SetAlias(ctx context.Context, request SetAliasRequest) error {
-	var cmd generatedwire.SystemSetDevAliasCommand
+	var cmd dependencymodels.SystemSetDevAliasCommand
 
 	cmd.System.SetDevAlias.Alias = request.Alias
 
@@ -17,5 +17,10 @@ func (client *Client) SetAlias(ctx context.Context, request SetAliasRequest) err
 		return err
 	}
 
-	return checkPassthroughCommandError(data, NamespaceSystem, CmdSetDevAlias, "SetAlias")
+	return checkPassthroughCommandError(
+		data,
+		dependencymodels.NamespaceSystem,
+		dependencymodels.CmdSetDevAlias,
+		"SetAlias",
+	)
 }

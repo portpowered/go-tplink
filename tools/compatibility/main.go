@@ -302,7 +302,7 @@ func parsePackages(value string) ([]string, error) {
 	packages := make([]string, 0)
 	seen := make(map[string]struct{})
 
-	for _, item := range strings.Split(value, ",") {
+	for item := range strings.SplitSeq(value, ",") {
 		name := strings.TrimSpace(item)
 		if name == "" {
 			return nil, gateError{message: "package paths must not be empty", cause: nil}
@@ -526,6 +526,7 @@ func installAPIDiff(root, toolDir string) error {
 }
 
 func writeExportData(tool, directory, packagePath, outputPath string) error {
+	//nolint:gosec // The binary path is created in a fresh temporary directory by this command.
 	cmd := exec.CommandContext(context.Background(), tool, "-w", outputPath, packagePath)
 	cmd.Dir = directory
 	cmd.Env = withEnvironment(os.Environ(), "GOTOOLCHAIN", "auto")
@@ -542,6 +543,7 @@ func writeExportData(tool, directory, packagePath, outputPath string) error {
 }
 
 func compareAPIs(tool, oldData, newData string) (string, error) {
+	//nolint:gosec // The binary path is created in a fresh temporary directory by this command.
 	cmd := exec.CommandContext(context.Background(), tool, "-incompatible", oldData, newData)
 	cmd.Env = withEnvironment(os.Environ(), "GOTOOLCHAIN", "auto")
 	cmd.Env = withEnvironment(cmd.Env, "GOWORK", "off")
