@@ -400,19 +400,18 @@ func (transport *replayTransport) assertConsumed() error {
 
 func matchFixtureRequest(request *http.Request, body []byte, operation string, exchange fixtureExchange) error {
 	want := exchange.Request
-	if request.Method != want.Method || request.URL.Scheme+"://"+request.URL.Host != want.Origin ||
-		request.URL.EscapedPath() != want.Path {
-		return replayDiagnosticErrorf(
-			"got %s %s, want %s %s%s",
-			request.Method,
-			request.URL,
-			want.Method,
-			want.Origin,
-			want.Path,
-		)
+
+	err := matchFixtureURLIdentity(request, want)
+	if err != nil {
+		return err
 	}
 
-	err := matchFixtureQuery(request.URL.Query(), want.Query)
+	actualQuery, queryErr := url.ParseQuery(request.URL.RawQuery)
+	if queryErr != nil {
+		return replayDiagnosticError("request URL query is malformed")
+	}
+
+	err = matchFixtureQuery(actualQuery, want.Query)
 	if err != nil {
 		return err
 	}
@@ -427,6 +426,60 @@ func matchFixtureRequest(request *http.Request, body []byte, operation string, e
 	}
 
 	return matchFixtureBody(body, want.Bodies)
+}
+
+func matchFixtureURLIdentity(request *http.Request, want fixtureRequest) error {
+	if request.URL == nil {
+		return replayDiagnosticError("request URL is missing")
+	}
+
+	if request.URL.User != nil {
+		return replayDiagnosticError("request URL userinfo is unsupported")
+	}
+
+	if request.URL.Opaque != "" {
+		return replayDiagnosticError("request URL opaque form is unsupported")
+	}
+
+	if request.Host != "" && request.Host != request.URL.Host {
+		return replayDiagnosticError("request Host override does not match URL authority")
+	}
+
+	err := validateFixtureOrigin(want.Origin)
+	if err != nil {
+		return err
+	}
+
+	requestOrigin := request.URL.Scheme + "://" + request.URL.Host
+	if request.Method != want.Method || requestOrigin != want.Origin || request.URL.EscapedPath() != want.Path {
+		return replayDiagnosticErrorf(
+			"request identity mismatch: got %s %s%s, want %s %s%s",
+			request.Method,
+			requestOrigin,
+			request.URL.EscapedPath(),
+			want.Method,
+			want.Origin,
+			want.Path,
+		)
+	}
+
+	return nil
+}
+
+func validateFixtureOrigin(origin string) error {
+	fixtureOrigin, err := url.Parse(origin)
+	if err != nil || !isValidFixtureOrigin(fixtureOrigin) {
+		return replayDiagnosticError("fixture origin is invalid or contains unsupported URL components")
+	}
+
+	return nil
+}
+
+func isValidFixtureOrigin(origin *url.URL) bool {
+	return origin.User == nil &&
+		(origin.Scheme == "http" || origin.Scheme == "https") &&
+		origin.Host != "" && origin.Path == "" && origin.RawQuery == "" &&
+		!origin.ForceQuery && origin.Fragment == "" && origin.Opaque == ""
 }
 
 func matchFixtureQuery(actual, expected url.Values) error {

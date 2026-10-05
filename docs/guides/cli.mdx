@@ -54,6 +54,15 @@ go-tplink auth status
 go-tplink auth status --json
 ```
 
+### Reauthenticate after token expiry
+
+The CLI does not save your password. `auth status` checks that a token is
+available locally; it does not validate or renew that token with the provider.
+If a command reports an expired token, run `go-tplink auth login` again and
+provide the account credentials through one of the login inputs above. A
+successful login replaces the token in the selected token file, which later
+commands reuse. The CLI does not log in again automatically.
+
 Use `go-tplink auth export --output path` only when another application needs
 the session token. Export creates a new user-only JSON file and refuses to
 overwrite an existing file. Treat that file as a secret. The command

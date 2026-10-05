@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -22,12 +21,22 @@ const (
 )
 
 type generatedScalarMetadata struct {
-	constants      map[string]map[string]bool
-	constantValues map[string]map[string]string
-	fields         map[string]map[string]map[string]bool
-	closedEnums    map[string]map[string]map[string]map[string]bool
-	modelFields    map[string]map[string]map[string]generatedModelFieldType
-	modelTypes     map[string]map[string]bool
+	constants       map[string]map[string]bool
+	constantValues  map[string]map[string]string
+	fields          map[string]map[string]map[string]bool
+	closedEnums     map[string]map[string]map[string]map[string]bool
+	closedEnumPaths map[string]map[string]map[string]generatedClosedEnumField
+	modelFields     map[string]map[string]map[string]generatedModelFieldType
+	modelTypes      map[string]map[string]bool
+}
+
+type generatedClosedEnumField struct {
+	schemaOwner     string
+	wireSchemaOwner string
+	schemaPointer   string
+	jsonPath        string
+	goPath          string
+	values          map[string]bool
 }
 
 type generatedModelFieldType struct {
@@ -35,14 +44,27 @@ type generatedModelFieldType struct {
 	typeName    string
 }
 
+type generatedScalarSchemaError struct {
+	message string
+}
+
+func (schemaError generatedScalarSchemaError) Error() string {
+	return schemaError.message
+}
+
+func generatedScalarSchemaErrorf(format string, arguments ...any) error {
+	return generatedScalarSchemaError{message: fmt.Sprintf(format, arguments...)}
+}
+
 func readGeneratedScalarMetadata(root string) (generatedScalarMetadata, error) {
 	metadata := generatedScalarMetadata{
-		constants:      make(map[string]map[string]bool),
-		constantValues: make(map[string]map[string]string),
-		fields:         make(map[string]map[string]map[string]bool),
-		closedEnums:    make(map[string]map[string]map[string]map[string]bool),
-		modelFields:    make(map[string]map[string]map[string]generatedModelFieldType),
-		modelTypes:     make(map[string]map[string]bool),
+		constants:       make(map[string]map[string]bool),
+		constantValues:  make(map[string]map[string]string),
+		fields:          make(map[string]map[string]map[string]bool),
+		closedEnums:     make(map[string]map[string]map[string]map[string]bool),
+		closedEnumPaths: make(map[string]map[string]map[string]generatedClosedEnumField),
+		modelFields:     make(map[string]map[string]map[string]generatedModelFieldType),
+		modelTypes:      make(map[string]map[string]bool),
 	}
 
 	scalarTypes, err := readGeneratedModelScalars(root)
@@ -103,6 +125,11 @@ func mergeGeneratedOutputScalarMetadata(
 		if err != nil {
 			return err
 		}
+
+		err = mergeGeneratedClosedEnumPaths(metadata.closedEnumPaths, importPath, schemaFile, file, scalarTypes)
+		if err != nil {
+			return err
+		}
 	}
 
 	mergeGeneratedModelFields(metadata.modelFields, importPath, generatedModelFieldTypes(file, importPath))
@@ -137,6 +164,7 @@ func mergeGeneratedCompatibilityScalarMetadata(root string, metadata *generatedS
 	metadata.constants[compatibilityPath] = generatedConstantNames(file)
 	metadata.fields[compatibilityPath] = metadata.fields[dependencymodelsImportPath]
 	metadata.closedEnums[compatibilityPath] = metadata.closedEnums[dependencymodelsImportPath]
+	metadata.closedEnumPaths[compatibilityPath] = metadata.closedEnumPaths[dependencymodelsImportPath]
 	metadata.modelFields[compatibilityPath] = metadata.modelFields[dependencymodelsImportPath]
 	metadata.modelTypes[compatibilityPath] = metadata.modelTypes[dependencymodelsImportPath]
 	metadata.constantValues[compatibilityPath] = make(map[string]string)
@@ -223,6 +251,59 @@ func mergeGeneratedClosedEnums(
 	}
 
 	return nil
+}
+
+func mergeGeneratedClosedEnumPaths(
+	destination map[string]map[string]map[string]generatedClosedEnumField,
+	packagePath, schemaPath string,
+	file *ast.File,
+	scalarTypes map[string]bool,
+) error {
+	closedEnumPaths, err := generatedClosedScalarEnumPaths(schemaPath, file, scalarTypes)
+	if err != nil {
+		return err
+	}
+
+	if destination[packagePath] == nil {
+		destination[packagePath] = make(map[string]map[string]generatedClosedEnumField)
+	}
+
+	for typeName, fields := range closedEnumPaths {
+		err := mergeGeneratedClosedEnumTypePaths(destination[packagePath], typeName, fields)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func mergeGeneratedClosedEnumTypePaths(
+	destination map[string]map[string]generatedClosedEnumField,
+	typeName string,
+	fields map[string]generatedClosedEnumField,
+) error {
+	if destination[typeName] == nil {
+		destination[typeName] = make(map[string]generatedClosedEnumField)
+	}
+
+	for fieldPath, field := range fields {
+		previous, found := destination[typeName][fieldPath]
+		if found && !generatedClosedEnumFieldsEqual(previous, field) {
+			return generatedScalarSchemaErrorf("conflicting generated enum schemas for %s.%s in %s and %s",
+				typeName, fieldPath, previous.schemaPointer, field.schemaPointer)
+		}
+
+		destination[typeName][fieldPath] = field
+	}
+
+	return nil
+}
+
+func generatedClosedEnumFieldsEqual(left, right generatedClosedEnumField) bool {
+	return maps.Equal(left.values, right.values) && left.schemaOwner == right.schemaOwner &&
+		left.wireSchemaOwner == right.wireSchemaOwner && left.schemaPointer == right.schemaPointer &&
+		left.jsonPath == right.jsonPath && left.goPath == right.goPath
 }
 
 func mergeGeneratedModelFields(
@@ -423,19 +504,58 @@ func generatedScalarStructFields(
 		return nil
 	}
 
+	return generatedScalarNestedStructFields(structure, file, scalarTypes, make(map[*ast.StructType]bool))
+}
+
+func generatedScalarNestedStructFields(
+	structure *ast.StructType,
+	file *ast.File,
+	scalarTypes map[string]bool,
+	visiting map[*ast.StructType]bool,
+) map[string]bool {
+	if structure == nil || structure.Fields == nil || visiting[structure] {
+		return nil
+	}
+
+	visiting[structure] = true
+	defer delete(visiting, structure)
+
 	fields := make(map[string]bool)
 
 	for _, field := range structure.Fields.List {
-		if !generatedScalarFieldType(field.Type, file, scalarTypes) {
+		if generatedScalarFieldType(field.Type, file, scalarTypes) {
+			for _, name := range field.Names {
+				fields[name.Name] = true
+			}
+
 			continue
 		}
 
-		for _, name := range field.Names {
-			fields[name.Name] = true
+		if nested := generatedAnonymousStruct(field.Type); nested != nil {
+			for name := range generatedScalarNestedStructFields(nested, file, scalarTypes, visiting) {
+				fields[name] = true
+			}
 		}
 	}
 
 	return fields
+}
+
+func generatedAnonymousStruct(expression ast.Expr) *ast.StructType {
+	expression = unparen(expression)
+
+	for {
+		switch typed := expression.(type) {
+		case *ast.StarExpr:
+			expression = unparen(typed.X)
+		case *ast.ArrayType:
+			expression = unparen(typed.Elt)
+		default:
+			structure, _ := expression.(*ast.StructType)
+
+			return structure
+		}
+	}
 }
 
 func generatedScalarFieldType(expression ast.Expr, file *ast.File, scalarTypes map[string]bool) bool {
@@ -536,6 +656,548 @@ func generatedClosedScalarProperties(
 	}
 
 	return closed
+}
+
+type generatedScalarSchemaNode struct {
+	Ref        string               `yaml:"$ref"`
+	Type       string               `yaml:"type"`
+	Enum       []any                `yaml:"enum"`
+	Properties map[string]yaml.Node `yaml:"properties"`
+	Items      yaml.Node            `yaml:"items"`
+	AllOf      []yaml.Node          `yaml:"allOf"`
+	OneOf      []yaml.Node          `yaml:"oneOf"`
+	AnyOf      []yaml.Node          `yaml:"anyOf"`
+}
+
+type generatedSchemaCatalog struct {
+	documents map[string]map[string]yaml.Node
+}
+
+type generatedSchemaScalarPath struct {
+	currentSchemaPath string
+	schemaOwner       string
+	schemaPointer     string
+	jsonPointer       string
+	goPath            []string
+	jsonPath          []string
+}
+
+type generatedSchemaScalarEnumWalker struct {
+	catalog         *generatedSchemaCatalog
+	file            *ast.File
+	scalarTypes     map[string]bool
+	wireSchemaOwner string
+	refStack        map[string]bool
+	result          map[string]map[string]generatedClosedEnumField
+}
+
+func generatedClosedScalarEnumPaths(
+	schemaPath string,
+	file *ast.File,
+	scalarTypes map[string]bool,
+) (map[string]map[string]generatedClosedEnumField, error) {
+	rootDocument, err := loadGeneratedSchemaDocument(schemaPath)
+	if err != nil {
+		return nil, err
+	}
+
+	catalog := generatedSchemaCatalog{documents: map[string]map[string]yaml.Node{
+		filepath.Clean(schemaPath): rootDocument,
+	}}
+	paths := make(map[string]map[string]generatedClosedEnumField)
+
+	for schemaName, schemaNode := range rootDocument {
+		structure := generatedStructForSchema(file, schemaName)
+		if structure == nil {
+			continue
+		}
+
+		var decoded generatedScalarSchemaNode
+
+		decodeErr := schemaNode.Decode(&decoded)
+		if decodeErr != nil {
+			return nil, fmt.Errorf("decode generated schema component %s in %s: %w", schemaName, schemaPath, decodeErr)
+		}
+
+		// The generated oneOf and anyOf wrappers are opaque RawMessage unions.
+		// Their concrete alternatives are scanned from their own component types.
+		if len(decoded.Properties) == 0 && len(decoded.AllOf) == 0 &&
+			(len(decoded.OneOf) != 0 || len(decoded.AnyOf) != 0) {
+			continue
+		}
+
+		modelType := ast.Expr(ast.NewIdent(schemaName))
+		refStack := make(map[string]bool)
+
+		err = walkGeneratedSchemaScalarEnums(
+			&catalog, filepath.Clean(schemaPath), schemaNode, modelType, file, scalarTypes,
+			schemaName, schemaName, generatedSchemaComponentPointer(schemaName), generatedSchemaComponentPointer(schemaName),
+			nil, nil, refStack, paths,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("index nested closed enums for %s in %s: %w", schemaName, schemaPath, err)
+		}
+	}
+
+	return paths, nil
+}
+
+func loadGeneratedSchemaDocument(path string) (map[string]yaml.Node, error) {
+	//nolint:gosec // Schema paths originate in the checked-in generated model inventory or local refs.
+	source, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read generated scalar schema %s: %w", path, err)
+	}
+
+	var document schemaDocument
+
+	err = yaml.Unmarshal(source, &document)
+	if err != nil {
+		return nil, fmt.Errorf("parse generated scalar schema %s: %w", path, err)
+	}
+
+	return document.Components.Schemas, nil
+}
+
+func walkGeneratedSchemaScalarEnums(
+	catalog *generatedSchemaCatalog,
+	currentSchemaPath string,
+	schemaNode yaml.Node,
+	modelExpression ast.Expr,
+	file *ast.File,
+	scalarTypes map[string]bool,
+	wireSchemaOwner, schemaOwner, schemaPointer, jsonPointer string,
+	goPath, jsonPath []string,
+	refStack map[string]bool,
+	result map[string]map[string]generatedClosedEnumField,
+) error {
+	walker := generatedSchemaScalarEnumWalker{
+		catalog:         catalog,
+		file:            file,
+		scalarTypes:     scalarTypes,
+		wireSchemaOwner: wireSchemaOwner,
+		refStack:        refStack,
+		result:          result,
+	}
+	path := generatedSchemaScalarPath{
+		currentSchemaPath: currentSchemaPath,
+		schemaOwner:       schemaOwner,
+		schemaPointer:     schemaPointer,
+		jsonPointer:       jsonPointer,
+		goPath:            goPath,
+		jsonPath:          jsonPath,
+	}
+
+	return walker.walk(schemaNode, modelExpression, path)
+}
+
+func (walker generatedSchemaScalarEnumWalker) walk(
+	schemaNode yaml.Node,
+	modelExpression ast.Expr,
+	path generatedSchemaScalarPath,
+) error {
+	decoded, err := decodeGeneratedScalarSchemaNode(schemaNode, path.schemaPointer)
+	if err != nil {
+		return err
+	}
+
+	if decoded.Ref != "" {
+		return walker.walkReference(decoded.Ref, modelExpression, path)
+	}
+
+	err = walker.recordEnum(decoded, modelExpression, path)
+	if err != nil {
+		return err
+	}
+
+	err = walker.walkItems(decoded.Items, modelExpression, path)
+	if err != nil {
+		return err
+	}
+
+	err = walker.walkProperties(decoded.Properties, modelExpression, path)
+	if err != nil {
+		return err
+	}
+
+	return walker.walkAllOf(decoded.AllOf, modelExpression, path)
+}
+
+func decodeGeneratedScalarSchemaNode(schemaNode yaml.Node, schemaPointer string) (generatedScalarSchemaNode, error) {
+	var decoded generatedScalarSchemaNode
+
+	err := schemaNode.Decode(&decoded)
+	if err != nil {
+		return generatedScalarSchemaNode{}, fmt.Errorf("decode schema node %s: %w", schemaPointer, err)
+	}
+
+	return decoded, nil
+}
+
+func (walker generatedSchemaScalarEnumWalker) walkReference(
+	reference string,
+	modelExpression ast.Expr,
+	path generatedSchemaScalarPath,
+) error {
+	targetPath, targetOwner, targetNode, err := walker.catalog.resolve(path.currentSchemaPath, reference)
+	if err != nil {
+		return err
+	}
+
+	refKey := targetPath + "#/components/schemas/" + targetOwner
+	if walker.refStack[refKey] {
+		return nil
+	}
+
+	walker.refStack[refKey] = true
+	defer delete(walker.refStack, refKey)
+
+	path.currentSchemaPath = targetPath
+	path.schemaOwner = targetOwner
+	path.schemaPointer = generatedSchemaComponentPointer(targetOwner)
+
+	return walker.walk(targetNode, modelExpression, path)
+}
+
+func (walker generatedSchemaScalarEnumWalker) recordEnum(
+	decoded generatedScalarSchemaNode,
+	modelExpression ast.Expr,
+	path generatedSchemaScalarPath,
+) error {
+	if len(decoded.Enum) == 0 {
+		return nil
+	}
+
+	if !generatedScalarFieldType(modelExpression, walker.file, walker.scalarTypes) {
+		return generatedScalarSchemaErrorf("closed enum at %s has no generated scalar field at %s",
+			path.schemaPointer, strings.Join(path.goPath, "."))
+	}
+
+	values := generatedSchemaEnumValues(decoded.Enum)
+	fieldPath := strings.Join(path.goPath, ".")
+	field := generatedClosedEnumField{
+		schemaOwner:     path.schemaOwner,
+		wireSchemaOwner: walker.wireSchemaOwner,
+		schemaPointer:   path.schemaPointer,
+		jsonPath:        path.jsonPointer,
+		goPath:          fieldPath,
+		values:          values,
+	}
+
+	if walker.result[walker.wireSchemaOwner] == nil {
+		walker.result[walker.wireSchemaOwner] = make(map[string]generatedClosedEnumField)
+	}
+
+	previous, found := walker.result[walker.wireSchemaOwner][fieldPath]
+	if found && !generatedClosedEnumValuesEqual(previous, field) {
+		return generatedScalarSchemaErrorf("conflicting closed enums for Go field %s at %s and %s",
+			fieldPath, previous.schemaPointer, path.schemaPointer)
+	}
+
+	walker.result[walker.wireSchemaOwner][fieldPath] = field
+
+	return nil
+}
+
+func generatedSchemaEnumValues(enumValues []any) map[string]bool {
+	values := make(map[string]bool, len(enumValues))
+	for _, value := range enumValues {
+		values[fmt.Sprint(value)] = true
+	}
+
+	return values
+}
+
+func generatedClosedEnumValuesEqual(left, right generatedClosedEnumField) bool {
+	return maps.Equal(left.values, right.values) && left.schemaPointer == right.schemaPointer &&
+		left.jsonPath == right.jsonPath
+}
+
+func (walker generatedSchemaScalarEnumWalker) walkItems(
+	items yaml.Node,
+	modelExpression ast.Expr,
+	path generatedSchemaScalarPath,
+) error {
+	if items.Kind == 0 {
+		return nil
+	}
+
+	itemExpression, found := generatedArrayElementType(modelExpression)
+	if !found {
+		itemExpression = nil
+	}
+
+	path.schemaPointer += "/items"
+	path.jsonPointer += "/items"
+	path.goPath = appendGeneratedPath(path.goPath, "[]")
+	path.jsonPath = appendGeneratedPath(path.jsonPath, "[]")
+
+	return walker.walk(items, itemExpression, path)
+}
+
+func (walker generatedSchemaScalarEnumWalker) walkProperties(
+	properties map[string]yaml.Node,
+	modelExpression ast.Expr,
+	path generatedSchemaScalarPath,
+) error {
+	if len(properties) == 0 {
+		return nil
+	}
+
+	structure := generatedStructForExpression(walker.file, modelExpression, make(map[string]bool))
+	for propertyName, propertyNode := range properties {
+		propertyExpression, fieldName := generatedSchemaPropertyExpression(structure, propertyName)
+
+		propertyPath := generatedSchemaPropertyPath(path, propertyName, fieldName)
+
+		err := walker.walk(propertyNode, propertyExpression, propertyPath)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func generatedSchemaPropertyExpression(structure *ast.StructType, propertyName string) (ast.Expr, string) {
+	if field, fieldName := generatedJSONStructField(structure, propertyName); field != nil {
+		return field.Type, fieldName
+	}
+
+	return nil, ""
+}
+
+func generatedSchemaPropertyPath(
+	path generatedSchemaScalarPath,
+	propertyName string,
+	fieldName string,
+) generatedSchemaScalarPath {
+	path.schemaPointer += "/properties/" + escapeGeneratedJSONPointer(propertyName)
+	path.jsonPointer += "/properties/" + escapeGeneratedJSONPointer(propertyName)
+
+	if fieldName != "" {
+		path.goPath = appendGeneratedPath(path.goPath, fieldName)
+	}
+
+	path.jsonPath = appendGeneratedPath(path.jsonPath, propertyName)
+
+	return path
+}
+
+func (walker generatedSchemaScalarEnumWalker) walkAllOf(
+	allOf []yaml.Node,
+	modelExpression ast.Expr,
+	path generatedSchemaScalarPath,
+) error {
+	for index, child := range allOf {
+		childPath := path
+		childPath.schemaPointer = fmt.Sprintf("%s/allOf/%d", path.schemaPointer, index)
+		childPath.jsonPointer = fmt.Sprintf("%s/allOf/%d", path.jsonPointer, index)
+
+		err := walker.walk(child, modelExpression, childPath)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (catalog *generatedSchemaCatalog) resolve(currentPath, reference string) (string, string, yaml.Node, error) {
+	fileReference, fragment, err := generatedSchemaReferenceParts(reference)
+	if err != nil {
+		return "", "", yaml.Node{}, err
+	}
+
+	targetPath, err := generatedSchemaReferencePath(currentPath, fileReference, reference)
+	if err != nil {
+		return "", "", yaml.Node{}, err
+	}
+
+	componentName, err := generatedSchemaReferenceComponent(fragment, reference)
+	if err != nil {
+		return "", "", yaml.Node{}, err
+	}
+
+	schemas, err := catalog.documentAt(targetPath)
+	if err != nil {
+		return "", "", yaml.Node{}, err
+	}
+
+	node, found := schemas[componentName]
+	if !found {
+		return "", "", yaml.Node{}, generatedScalarSchemaErrorf(
+			"closed-enum schema reference %q has no component %q", reference, componentName)
+	}
+
+	return targetPath, componentName, node, nil
+}
+
+func generatedSchemaReferenceParts(reference string) (string, string, error) {
+	fileReference, fragment, found := strings.Cut(reference, "#")
+	if !found || !strings.HasPrefix(fragment, "/components/schemas/") {
+		return "", "", generatedScalarSchemaErrorf("unsupported closed-enum schema reference %q", reference)
+	}
+
+	return fileReference, fragment, nil
+}
+
+func generatedSchemaReferencePath(currentPath, fileReference, reference string) (string, error) {
+	if fileReference == "" {
+		return filepath.Clean(currentPath), nil
+	}
+
+	if filepath.IsAbs(fileReference) || strings.Contains(fileReference, "://") {
+		return "", generatedScalarSchemaErrorf("non-local closed-enum schema reference %q", reference)
+	}
+
+	targetPath := filepath.Clean(filepath.Join(filepath.Dir(currentPath), filepath.FromSlash(fileReference)))
+
+	return targetPath, nil
+}
+
+func generatedSchemaReferenceComponent(fragment, reference string) (string, error) {
+	componentName, found := strings.CutPrefix(fragment, "/components/schemas/")
+	if !found || componentName == "" {
+		return "", generatedScalarSchemaErrorf("unsupported closed-enum schema reference %q", reference)
+	}
+
+	return unescapeGeneratedJSONPointer(componentName), nil
+}
+
+func (catalog *generatedSchemaCatalog) documentAt(path string) (map[string]yaml.Node, error) {
+	schemas, found := catalog.documents[path]
+	if found {
+		return schemas, nil
+	}
+
+	loadedSchemas, err := loadGeneratedSchemaDocument(path)
+	if err != nil {
+		return nil, err
+	}
+
+	catalog.documents[path] = loadedSchemas
+
+	return loadedSchemas, nil
+}
+
+func generatedStructForExpression(file *ast.File, expression ast.Expr, visiting map[string]bool) *ast.StructType {
+	expression = generatedBaseStructExpression(expression)
+	switch typed := expression.(type) {
+	case *ast.StructType:
+		return typed
+	case *ast.Ident:
+		return generatedStructForTypeName(file, typed.Name, visiting)
+	case *ast.SelectorExpr:
+		return generatedStructForSelector(file, typed, visiting)
+	}
+
+	return nil
+}
+
+func generatedBaseStructExpression(expression ast.Expr) ast.Expr {
+	expression = unparen(expression)
+
+	for {
+		switch typed := expression.(type) {
+		case *ast.StarExpr:
+			expression = unparen(typed.X)
+		case *ast.ArrayType:
+			expression = unparen(typed.Elt)
+		default:
+			return expression
+		}
+	}
+}
+
+func generatedStructForTypeName(file *ast.File, name string, visiting map[string]bool) *ast.StructType {
+	if visiting[name] {
+		return nil
+	}
+
+	visiting[name] = true
+	defer delete(visiting, name)
+
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.TYPE {
+			continue
+		}
+
+		for _, rawSpec := range general.Specs {
+			typeDefinition, ok := rawSpec.(*ast.TypeSpec)
+			if ok && typeDefinition.Name.Name == name {
+				return generatedStructForExpression(file, typeDefinition.Type, visiting)
+			}
+		}
+	}
+
+	return nil
+}
+
+func generatedStructForSelector(file *ast.File, selector *ast.SelectorExpr, visiting map[string]bool) *ast.StructType {
+	if importedPath(file, selector.X) != "" {
+		return nil
+	}
+
+	return generatedStructForExpression(file, selector.Sel, visiting)
+}
+
+func generatedArrayElementType(expression ast.Expr) (ast.Expr, bool) {
+	expression = unparen(expression)
+
+	for {
+		switch typed := expression.(type) {
+		case *ast.StarExpr:
+			expression = unparen(typed.X)
+		case *ast.ArrayType:
+			return typed.Elt, true
+		default:
+			return nil, false
+		}
+	}
+}
+
+func generatedJSONStructField(structure *ast.StructType, propertyName string) (*ast.Field, string) {
+	if structure == nil || structure.Fields == nil {
+		return nil, ""
+	}
+
+	for _, field := range structure.Fields.List {
+		if field.Tag == nil || len(field.Names) == 0 {
+			continue
+		}
+
+		tag, err := strconv.Unquote(field.Tag.Value)
+		if err != nil {
+			continue
+		}
+
+		jsonName, _, _ := strings.Cut(reflect.StructTag(tag).Get("json"), ",")
+		if jsonName == propertyName {
+			return field, field.Names[0].Name
+		}
+	}
+
+	return nil, ""
+}
+
+func generatedSchemaComponentPointer(name string) string {
+	return "#/components/schemas/" + escapeGeneratedJSONPointer(name)
+}
+
+func escapeGeneratedJSONPointer(value string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(value, "~", "~0"), "/", "~1")
+}
+
+func unescapeGeneratedJSONPointer(value string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(value, "~1", "/"), "~0", "~")
+}
+
+func appendGeneratedPath(path []string, value string) []string {
+	result := append([]string(nil), path...)
+
+	return append(result, value)
 }
 
 func generatedStructForSchema(file *ast.File, schemaName string) *ast.StructType {
@@ -1188,35 +1850,88 @@ func scalarAssignmentSinkViolation(
 	metadata generatedScalarMetadata,
 ) error {
 	for index, target := range assignment.Lhs {
-		if index >= len(assignment.Rhs) || !isGeneratedModelField(
-			target, collectGeneratedVariablePositionSet(source.file, generatedTypes),
-		) {
-			continue
-		}
-
-		selector, ok := unparen(target).(*ast.SelectorExpr)
-		if !ok || !generatedScalarFieldName(metadata.fields, selector.Sel.Name) {
-			continue
-		}
-
-		closedValues, closed, resolved := generatedClosedEnumFieldValues(
-			source.file, target, generatedTypes, metadata,
+		err := scalarAssignmentTargetViolation(
+			source, assignment, index, target, evaluation, generatedTypes, metadata,
 		)
-		if !resolved && generatedClosedEnumFieldName(metadata.closedEnums, selector.Sel.Name) {
-			return sourceError(source.fileSet, source.path, assignment.Rhs[index].Pos(), generatedScalarMessage)
-		}
-
-		if !closed {
-			closedValues = nil
-		}
-
-		valueEvaluation := scalarEvaluationForClosedEnum(evaluation, closedValues)
-		if !scalarExpressionSafe(assignment.Rhs[index], valueEvaluation) {
-			return sourceError(source.fileSet, source.path, assignment.Rhs[index].Pos(), generatedScalarMessage)
+		if err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+func scalarAssignmentTargetViolation(
+	source packageProvenanceFile,
+	assignment *ast.AssignStmt,
+	index int,
+	target ast.Expr,
+	evaluation *scalarEvaluation,
+	generatedTypes map[string]bool,
+	metadata generatedScalarMetadata,
+) error {
+	if index >= len(assignment.Rhs) {
+		return nil
+	}
+
+	generatedVariables := collectGeneratedVariablePositionSet(source.file, generatedTypes)
+	if !isGeneratedModelField(target, generatedVariables) {
+		return nil
+	}
+
+	selector, ok := unparen(target).(*ast.SelectorExpr)
+	if !ok || !generatedScalarFieldName(metadata.fields, selector.Sel.Name) {
+		return nil
+	}
+
+	return scalarGeneratedFieldAssignmentViolation(
+		source, assignment, index, target, selector.Sel.Name, evaluation, generatedTypes, metadata,
+	)
+}
+
+func scalarGeneratedFieldAssignmentViolation(
+	source packageProvenanceFile,
+	assignment *ast.AssignStmt,
+	index int,
+	target ast.Expr,
+	fieldName string,
+	evaluation *scalarEvaluation,
+	generatedTypes map[string]bool,
+	metadata generatedScalarMetadata,
+) error {
+	closedField, closed, resolved := generatedClosedEnumFieldValues(
+		source.file, target, generatedTypes, metadata,
+	)
+	if !resolved && generatedClosedEnumFieldName(metadata.closedEnums, fieldName) {
+		return sourceError(source.fileSet, source.path, assignment.Rhs[index].Pos(), generatedScalarMessage)
+	}
+
+	if !resolved && generatedClosedEnumPathFieldName(metadata.closedEnumPaths, fieldName) {
+		return sourceError(source.fileSet, source.path, assignment.Rhs[index].Pos(), generatedScalarMessage)
+	}
+
+	if !closed {
+		closedField.values = nil
+	}
+
+	valueEvaluation := scalarEvaluationForClosedEnum(evaluation, closedField.values)
+	if scalarExpressionSafe(assignment.Rhs[index], valueEvaluation) {
+		return nil
+	}
+
+	message := generatedScalarAssignmentMessage(closedField, closed)
+
+	return sourceError(source.fileSet, source.path, assignment.Rhs[index].Pos(), message)
+}
+
+func generatedScalarAssignmentMessage(field generatedClosedEnumField, closed bool) string {
+	if !closed {
+		return generatedScalarMessage
+	}
+
+	return fmt.Sprintf("%s (schema owner %s %s, wire component %s, JSON path %s, Go field %s)",
+		generatedScalarMessage, field.schemaOwner, field.schemaPointer,
+		field.wireSchemaOwner, field.jsonPath, field.goPath)
 }
 
 func collectGeneratedVariablePositionSet(file *ast.File, generatedTypes map[string]bool) map[token.Pos]bool {
@@ -1278,50 +1993,111 @@ func generatedClosedEnumFieldValues(
 	target ast.Expr,
 	generatedTypes map[string]bool,
 	metadata generatedScalarMetadata,
-) (map[string]bool, bool, bool) {
-	var selectors []*ast.SelectorExpr
-
-	current := unparen(target)
-
-	for {
-		selector, ok := current.(*ast.SelectorExpr)
-		if !ok {
-			break
-		}
-
-		selectors = append(selectors, selector)
-		current = unparen(selector.X)
-	}
-
-	if len(selectors) == 0 {
-		return nil, false, false
-	}
-
-	identifier, ok := current.(*ast.Ident)
-	if !ok {
-		return nil, false, false
+) (generatedClosedEnumField, bool, bool) {
+	identifier, fieldPath, found := generatedModelFieldTargetPath(target)
+	if !found || len(fieldPath) == 0 {
+		return emptyGeneratedClosedEnumField(), false, false
 	}
 
 	modelType, found := generatedModelTypeForIdentifier(file, identifier, generatedTypes, metadata,
 		make(map[token.Pos]bool))
 	if !found {
-		return nil, false, false
+		return emptyGeneratedClosedEnumField(), false, false
 	}
 
-	for index, selector := range slices.Backward(selectors) {
-		if index == 0 {
-			allowed, closed := metadata.closedEnums[modelType.packagePath][modelType.typeName][selector.Sel.Name]
+	pathKey := strings.Join(fieldPath, ".")
+	if field, closed := metadata.closedEnumPaths[modelType.packagePath][modelType.typeName][pathKey]; closed {
+		return field, true, true
+	}
 
-			return allowed, closed, true
-		}
-
-		modelType, found = metadata.modelFields[modelType.packagePath][modelType.typeName][selector.Sel.Name]
-		if !found {
-			return nil, false, false
+	if len(fieldPath) == 1 {
+		allowed, closed := metadata.closedEnums[modelType.packagePath][modelType.typeName][fieldPath[0]]
+		if closed {
+			return generatedClosedEnumField{
+				schemaOwner:     modelType.typeName,
+				wireSchemaOwner: modelType.typeName,
+				schemaPointer:   "",
+				jsonPath:        "",
+				goPath:          pathKey,
+				values:          allowed,
+			}, true, true
 		}
 	}
 
-	return nil, false, false
+	return emptyGeneratedClosedEnumField(), false, true
+}
+
+func emptyGeneratedClosedEnumField() generatedClosedEnumField {
+	return generatedClosedEnumField{
+		schemaOwner:     "",
+		wireSchemaOwner: "",
+		schemaPointer:   "",
+		jsonPath:        "",
+		goPath:          "",
+		values:          nil,
+	}
+}
+
+func generatedModelFieldTargetPath(target ast.Expr) (*ast.Ident, []string, bool) {
+	var collect func(ast.Expr) (*ast.Ident, []string, bool)
+
+	collect = func(expression ast.Expr) (*ast.Ident, []string, bool) {
+		switch typed := unparen(expression).(type) {
+		case *ast.Ident:
+			return typed, nil, true
+		case *ast.SelectorExpr:
+			root, path, found := collect(typed.X)
+			if !found {
+				return nil, nil, false
+			}
+
+			return root, appendGeneratedPath(path, typed.Sel.Name), true
+		case *ast.IndexExpr:
+			root, path, found := collect(typed.X)
+			if !found {
+				return nil, nil, false
+			}
+
+			return root, appendGeneratedPath(path, "[]"), true
+		case *ast.StarExpr:
+			return collect(typed.X)
+		default:
+			return nil, nil, false
+		}
+	}
+
+	return collect(target)
+}
+
+func generatedClosedEnumPathFieldName(
+	closedEnumPaths map[string]map[string]map[string]generatedClosedEnumField,
+	fieldName string,
+) bool {
+	for _, modelTypes := range closedEnumPaths {
+		for _, fields := range modelTypes {
+			for _, field := range fields {
+				if pathEndsWithGeneratedField(field.goPath, fieldName) {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+func pathEndsWithGeneratedField(path, fieldName string) bool {
+	if path == fieldName {
+		return true
+	}
+
+	_, last, found := strings.Cut(path, ".")
+	for found {
+		path = last
+		_, last, found = strings.Cut(path, ".")
+	}
+
+	return path == fieldName
 }
 
 func generatedModelTypeForIdentifier(

@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +13,11 @@ import (
 )
 
 const (
-	helperSourceFilename = "helpers.go"
-	useSourceFilename    = "use.go"
+	helperSourceFilename         = "helpers.go"
+	useSourceFilename            = "use.go"
+	systemSetRelayStateModel     = "SystemSetRelayStateCommand"
+	lightingTransitionStateModel = "LightingTransitionLightStateCommand"
+	systemSetDevAliasModel       = "SystemSetDevAliasCommand"
 )
 
 func TestPackageWireProvenanceRejectsSiblingFixedScalarAndMapEscape(t *testing.T) {
@@ -125,6 +130,14 @@ func TestGeneratedScalarMetadataIncludesEnumFieldsAndConstants(t *testing.T) {
 	t.Parallel()
 
 	metadata := readCurrentGeneratedScalarMetadata(t)
+	assertGeneratedMethodScalarMetadata(t, metadata)
+	assertGeneratedNestedScalarMetadata(t, metadata)
+	assertGeneratedOpenScalarMetadata(t, metadata)
+}
+
+func assertGeneratedMethodScalarMetadata(t *testing.T, metadata generatedScalarMetadata) {
+	t.Helper()
+
 	if !metadata.constants[dependencymodelsImportPath]["MethodLogin"] {
 		t.Fatal("generated scalar metadata omitted dependencymodels.MethodLogin")
 	}
@@ -143,6 +156,123 @@ func TestGeneratedScalarMetadataIncludesEnumFieldsAndConstants(t *testing.T) {
 
 	if metadata.constantValues[dependencymodelsImportPath]["MethodLogin"] != "login" {
 		t.Fatal("generated scalar metadata did not bind MethodLogin to its schema value")
+	}
+}
+
+func assertGeneratedNestedScalarMetadata(t *testing.T, metadata generatedScalarMetadata) {
+	t.Helper()
+
+	assertGeneratedRebootDelayMetadata(t, metadata)
+	assertGeneratedRelayStateMetadata(t, metadata)
+	assertGeneratedTransitionMetadata(t, metadata)
+}
+
+func assertGeneratedRebootDelayMetadata(t *testing.T, metadata generatedScalarMetadata) {
+	t.Helper()
+
+	closedPaths := metadata.closedEnumPaths[dependencymodelsImportPath]
+	rebootDelay, found := closedPaths[systemRebootCommandName]["System.Reboot.Delay"]
+
+	if !found {
+		t.Fatal("generated scalar metadata omitted the nested reboot delay enum")
+	}
+
+	if rebootDelay.schemaOwner != systemRebootCommandName {
+		t.Errorf("nested reboot delay schema owner = %q, want %s", rebootDelay.schemaOwner, systemRebootCommandName)
+	}
+
+	const pointerSuffix = "/properties/system/properties/reboot/properties/delay"
+
+	wantPointer := "#/components/schemas/" + systemRebootCommandName + pointerSuffix
+
+	if rebootDelay.schemaPointer != wantPointer {
+		t.Errorf("nested reboot delay schema pointer = %q, want %s", rebootDelay.schemaPointer, wantPointer)
+	}
+
+	if rebootDelay.jsonPath != rebootDelay.schemaPointer {
+		t.Errorf(
+			"nested reboot delay JSON path = %q, want its schema pointer %s",
+			rebootDelay.jsonPath,
+			rebootDelay.schemaPointer,
+		)
+	}
+
+	if !rebootDelay.values["1"] {
+		t.Errorf("nested reboot delay enum values = %#v, want value 1", rebootDelay.values)
+	}
+}
+
+func assertGeneratedRelayStateMetadata(t *testing.T, metadata generatedScalarMetadata) {
+	t.Helper()
+
+	closedPaths := metadata.closedEnumPaths[dependencymodelsImportPath]
+	relayState, found := closedPaths[systemSetRelayStateModel]["System.SetRelayState.State"]
+
+	if !found {
+		t.Fatal("generated scalar metadata omitted the nested relay state enum")
+	}
+
+	if relayState.schemaOwner != systemSetRelayStateModel {
+		t.Errorf("nested relay state schema owner = %q, want %s", relayState.schemaOwner, systemSetRelayStateModel)
+	}
+
+	const pointerSuffix = "/properties/system/properties/set_relay_state/properties/state"
+
+	wantPointer := "#/components/schemas/" + systemSetRelayStateModel + pointerSuffix
+
+	if relayState.schemaPointer != wantPointer {
+		t.Errorf("nested relay state schema pointer = %q, want %s", relayState.schemaPointer, wantPointer)
+	}
+
+	if !maps.Equal(relayState.values, map[string]bool{"0": true, "1": true}) {
+		t.Fatalf("nested relay state enum metadata = %#v, found %v", relayState, found)
+	}
+}
+
+func assertGeneratedTransitionMetadata(t *testing.T, metadata generatedScalarMetadata) {
+	t.Helper()
+
+	closedPaths := metadata.closedEnumPaths[dependencymodelsImportPath]
+
+	const transitionPath = "SmartlifeIotSmartbulbLightingservice.TransitionLightState.OnOff"
+
+	transition, found := closedPaths[lightingTransitionStateModel][transitionPath]
+
+	if !found {
+		t.Fatal("generated scalar metadata omitted the referenced transition enum")
+	}
+
+	if transition.schemaOwner != "LightTransitionState" {
+		t.Errorf("referenced transition schema owner = %q, want LightTransitionState", transition.schemaOwner)
+	}
+
+	if transition.wireSchemaOwner != lightingTransitionStateModel {
+		t.Errorf(
+			"referenced transition wire schema owner = %q, want %s",
+			transition.wireSchemaOwner,
+			lightingTransitionStateModel,
+		)
+	}
+
+	const wantPointer = "#/components/schemas/LightTransitionState/properties/on_off"
+
+	if transition.schemaPointer != wantPointer {
+		t.Errorf("referenced transition schema pointer = %q, want %s", transition.schemaPointer, wantPointer)
+	}
+
+	if !maps.Equal(transition.values, map[string]bool{"0": true, "1": true}) {
+		t.Fatalf("referenced nested enum metadata = %#v, found %v", transition, found)
+	}
+}
+
+func assertGeneratedOpenScalarMetadata(t *testing.T, metadata generatedScalarMetadata) {
+	t.Helper()
+
+	closedPaths := metadata.closedEnumPaths[dependencymodelsImportPath]
+	alias := closedPaths[systemSetDevAliasModel]["System.SetDevAlias.Alias"]
+
+	if alias.values != nil {
+		t.Fatal("generated scalar metadata marked open nested alias as a closed enum")
 	}
 }
 
@@ -283,6 +413,175 @@ func Build(value dm.LoginCloudRequestMethod) {
 }
 `,
 	})
+}
+
+func TestPackageScalarProvenanceRejectsNestedClosedEnumCallerValues(t *testing.T) {
+	t.Parallel()
+
+	fixtures := map[string]string{
+		"exported relay state helper": `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func SetRelayStateFromCaller(value int) {
+  var command dm.SystemSetRelayStateCommand
+  command.System.SetRelayState.State = dm.SystemSetRelayStateCommandSystemSetRelayStateState(value)
+}
+`,
+		"exported reboot helper through internal setter": `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func setDelay(command *dm.SystemRebootCommand, value int) {
+  command.System.Reboot.Delay = dm.SystemRebootCommandSystemRebootDelay(value)
+}
+func RebootWithCallerDelay(value int) {
+  var command dm.SystemRebootCommand
+  setDelay(&command, value)
+}
+`,
+	}
+
+	for name, source := range fixtures {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assertProductionScalarFixtureRejected(t, map[string]string{useSourceFilename: source})
+		})
+	}
+}
+
+func TestPackageScalarProvenanceAcceptsNestedGeneratedEnumsAndOpenValues(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	paths := writePackageSourceFiles(t, root, map[string]string{
+		useSourceFilename: `package fixture
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func Build(alias string) {
+  var relay dm.SystemSetRelayStateCommand
+  relay.System.SetRelayState.State = dm.SystemSetRelayStateCommandSystemSetRelayStateStateN1
+  var reboot dm.SystemRebootCommand
+  reboot.System.Reboot.Delay = dm.SystemRebootCommandSystemRebootDelayN1
+  var deviceAlias dm.SystemSetDevAliasCommand
+  deviceAlias.System.SetDevAlias.Alias = alias
+}
+`,
+	})
+
+	err := checkProductionScalarFiles(t, paths)
+	if err != nil {
+		t.Fatalf("checkProductionFiles() rejected generated nested enum constants or open alias: %v", err)
+	}
+}
+
+func TestGeneratedClosedScalarEnumPathWalkerFollowsReferencesAndArrays(t *testing.T) {
+	t.Parallel()
+
+	schemaPath := writeClosedScalarEnumPathSchema(t)
+	file := parseClosedScalarEnumPathSource(t)
+
+	paths, err := generatedClosedScalarEnumPaths(schemaPath, file, map[string]bool{"ModeEnum": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertClosedScalarEnumPaths(t, paths)
+}
+
+func writeClosedScalarEnumPathSchema(t *testing.T) string {
+	t.Helper()
+
+	schemaPath := filepath.Join(t.TempDir(), "models.yaml")
+
+	schema := `components:
+  schemas:
+    Root:
+      type: object
+      properties:
+        inline:
+          type: object
+          properties:
+            mode:
+              type: integer
+              enum: [0, 1]
+        child:
+          $ref: '#/components/schemas/Nested'
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/Nested'
+    Nested:
+      type: object
+      properties:
+        mode:
+          type: integer
+          enum: [0, 1]
+`
+
+	err := os.WriteFile(schemaPath, []byte(schema), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return schemaPath
+}
+
+func parseClosedScalarEnumPathSource(t *testing.T) *ast.File {
+	t.Helper()
+
+	const source = `package dependencymodels
+type ModeEnum int
+type Root struct {
+  Inline struct { Mode ModeEnum ` + "`json:\"mode\"`" + ` } ` + "`json:\"inline\"`" + `
+  Child *Nested ` + "`json:\"child\"`" + `
+  Children []Nested ` + "`json:\"children\"`" + `
+}
+type Nested struct { Mode ModeEnum ` + "`json:\"mode\"`" + ` }
+`
+
+	file, err := parser.ParseFile(token.NewFileSet(), "models.gen.go", source, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return file
+}
+
+func assertClosedScalarEnumPaths(t *testing.T, paths map[string]map[string]generatedClosedEnumField) {
+	t.Helper()
+
+	const nestedModeSchemaPointer = "#/components/schemas/Nested/properties/mode"
+
+	for path, wantPointer := range map[string]string{
+		"Root.Inline.Mode":      "#/components/schemas/Root/properties/inline/properties/mode",
+		"Root.Child.Mode":       nestedModeSchemaPointer,
+		"Root.Children.[].Mode": nestedModeSchemaPointer,
+		"Nested.Mode":           nestedModeSchemaPointer,
+	} {
+		assertClosedScalarEnumPath(t, paths, path, wantPointer)
+	}
+}
+
+func assertClosedScalarEnumPath(
+	t *testing.T,
+	paths map[string]map[string]generatedClosedEnumField,
+	path, wantPointer string,
+) {
+	t.Helper()
+
+	typeName, goPath, found := strings.Cut(path, ".")
+	if !found {
+		t.Fatalf("invalid test path %q", path)
+	}
+
+	field, exists := paths[typeName][goPath]
+	if !exists {
+		t.Fatalf("generated enum metadata for %s was omitted", path)
+	}
+
+	if field.schemaPointer != wantPointer {
+		t.Errorf("generated enum metadata for %s has schema pointer %q; want %s", path, field.schemaPointer, wantPointer)
+	}
+
+	if !maps.Equal(field.values, map[string]bool{"0": true, "1": true}) {
+		t.Errorf("generated enum metadata for %s has values %#v; want [0, 1]", path, field.values)
+	}
 }
 
 func TestPackageScalarProvenanceRejectsClosedEnumFromExportedModelParameter(t *testing.T) {

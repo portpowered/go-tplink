@@ -371,7 +371,12 @@ func checkGeneratedSchemaModels(root string, generatedTypes map[string]bool) err
 		return err
 	}
 
-	return checkGeneratorRecords(root, inventoryText)
+	err = checkGeneratorRecords(root, inventoryText)
+	if err != nil {
+		return err
+	}
+
+	return checkGeneratedAnonymousModelInventory(root, inventoryText)
 }
 
 func missingSchemaRecords(root, inventoryText string, generatedTypes map[string]bool) ([]string, error) {

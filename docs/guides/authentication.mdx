@@ -57,9 +57,27 @@ non-empty. On success, outer `result` decodes as `tplinkmodels.LoginResult`:
 
 Pass `tplink.AuthContext{AccessToken: session.Token}` in each later request's
 `Auth` field. The token is sent as URL query parameter `token`; the reusable
-client does not store or refresh it. If it expires, log in again. Keep the
+client does not store credentials, retain the token, or refresh it. Keep the
 password and token secret, and redact the token from HTTP tracing and logs.
 See [errors and token handling](/docs/guides/errors).
+
+## Reauthenticate after token expiry
+
+If an authenticated call returns `TokenExpiredError`, call `Login` again with
+credentials your application retains, then use the new `LoginResult.Token`:
+
+```go
+session, err = client.Login(ctx, tplink.LoginRequest{
+    Email: email, Password: password,
+})
+if err != nil {
+    return err
+}
+auth.AccessToken = session.Token
+```
+
+The SDK does not automatically retry the failed operation; your application
+chooses whether to retry it after replacing the token.
 
 ## Configure the client
 

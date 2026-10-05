@@ -16,6 +16,7 @@ import (
 )
 
 const (
+	invalidArgumentsExitCode   = 2
 	callerStateMutationMessage = "mutation of caller-open SetLightState state; " +
 		"forward it through generated AdditionalProperties"
 	callerStateHelperEscapeMessage = "caller-open SetLightState state escapes to a helper; " +
@@ -54,6 +55,21 @@ func requiredGeneratedUses() []string {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == writeAnonymousInventory {
+		err := writeGeneratedAnonymousModelInventory(".")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+
+		return
+	}
+
+	if len(os.Args) != 1 {
+		fmt.Fprintf(os.Stderr, "usage: go run ./tools/wireinventory [%s]\n", writeAnonymousInventory)
+		os.Exit(invalidArgumentsExitCode)
+	}
+
 	err := checkRepository(".")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

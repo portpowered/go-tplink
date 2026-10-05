@@ -15,7 +15,10 @@ import (
 	"time"
 )
 
-const loginCloudRequestModel = "LoginCloudRequest"
+const (
+	loginCloudRequestModel  = "LoginCloudRequest"
+	systemRebootCommandName = "SystemRebootCommand"
+)
 
 func TestProductionWireInventoryPasses(t *testing.T) {
 	t.Parallel()
@@ -54,28 +57,73 @@ func shippedModuleProbeCases(root string) []shippedModuleProbe {
 	exampleDirectory := filepath.Join(root, "examples", "list-devices")
 
 	return []shippedModuleProbe{
-		{
-			name: "standalone CLI outbound call", directory: cliDirectory,
-			filename: "wireinventory_cli_probe.go", compileDir: cliDirectory,
-			source: `package main
+		cliOutboundProbe(cliDirectory),
+		exampleOutboundProbe(exampleDirectory),
+		relayEnumProbe(exampleDirectory),
+		rebootDelayProbe(exampleDirectory),
+		aliasedSendProbe(exampleDirectory),
+	}
+}
+
+func cliOutboundProbe(directory string) shippedModuleProbe {
+	return shippedModuleProbe{
+		name: "standalone CLI outbound call", directory: directory,
+		filename: "wireinventory_cli_probe.go", compileDir: directory,
+		source: `package main
 import "net/http"
 func wireInventoryCLIProbe() { _, _ = http.Get("https://probe.invalid") }
 `,
-			want: "HTTP constructor or convenience request is outside the registered cloud transport",
-		},
-		{
-			name: "shipped example outbound call", directory: exampleDirectory,
-			filename: "wireinventory_example_probe.go", compileDir: root,
-			source: `package main
+		want: "HTTP constructor or convenience request is outside the registered cloud transport",
+	}
+}
+
+func exampleOutboundProbe(directory string) shippedModuleProbe {
+	return shippedModuleProbe{
+		name: "shipped example outbound call", directory: directory,
+		filename: "wireinventory_example_probe.go", compileDir: filepath.Join(directory, "..", ".."),
+		source: `package main
 import "net/http"
 func wireInventoryExampleProbe() { _, _ = http.Get("https://probe.invalid") }
 `,
-			want: "HTTP constructor or convenience request is outside the registered cloud transport",
-		},
-		{
-			name: "aliased transport helper with unregistered authority", directory: exampleDirectory,
-			filename: "wireinventory_alias_probe.go", compileDir: root,
-			source: `package main
+		want: "HTTP constructor or convenience request is outside the registered cloud transport",
+	}
+}
+
+func relayEnumProbe(directory string) shippedModuleProbe {
+	return shippedModuleProbe{
+		name: "nested relay state enum from exported helper", directory: directory,
+		filename: "wireinventory_nested_relay_enum_probe.go", compileDir: filepath.Join(directory, "..", ".."),
+		source: `package main
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func SetRelayStateFromCaller(value int) {
+  var command dm.SystemSetRelayStateCommand
+  command.System.SetRelayState.State = dm.SystemSetRelayStateCommandSystemSetRelayStateState(value)
+}
+`,
+		want: generatedScalarMessage,
+	}
+}
+
+func rebootDelayProbe(directory string) shippedModuleProbe {
+	return shippedModuleProbe{
+		name: "nested reboot delay enum from exported helper", directory: directory,
+		filename: "wireinventory_nested_reboot_enum_probe.go", compileDir: filepath.Join(directory, "..", ".."),
+		source: `package main
+import dm "github.com/portpowered/go-tplink/pkg/dependencymodels"
+func RebootWithCallerDelay(value int) {
+  var command dm.SystemRebootCommand
+  command.System.Reboot.Delay = dm.SystemRebootCommandSystemRebootDelay(value)
+}
+`,
+		want: generatedScalarMessage,
+	}
+}
+
+func aliasedSendProbe(directory string) shippedModuleProbe {
+	return shippedModuleProbe{
+		name: "aliased transport helper with unregistered authority", directory: directory,
+		filename: "wireinventory_alias_probe.go", compileDir: filepath.Join(directory, "..", ".."),
+		source: `package main
 import (
   "context"
   "net/http"
@@ -88,8 +136,7 @@ func wireInventoryAliasProbe() {
     &url.URL{Scheme: "https", Host: "attacker.invalid"}, "probe", struct{}{}, nil)
 }
 `,
-			want: "cloud.Send method values and aliases are not registered network call sites",
-		},
+		want: "cloud.Send method values and aliases are not registered network call sites",
 	}
 }
 
@@ -475,7 +522,7 @@ func build() { _ = dependencymodels.Device{IsSameRegion: func() *bool { value :=
 			t.Parallel()
 
 			generatedTypes := map[string]bool{
-				loginCloudRequestModel: true, "SystemRebootCommand": true,
+				loginCloudRequestModel: true, systemRebootCommandName: true,
 				"SystemSetDevAliasCommand": true, "Device": true,
 			}
 
@@ -503,7 +550,7 @@ func build(alias string, delay int) {
 	err := checkSource(source, nil, nil, map[string]bool{
 		"SystemSetDevAliasCommand":             true,
 		"Device":                               true,
-		"SystemRebootCommand":                  true,
+		systemRebootCommandName:                true,
 		"SystemRebootCommandSystemRebootDelay": true,
 	})
 	if err != nil {

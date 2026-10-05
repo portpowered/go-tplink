@@ -1138,23 +1138,30 @@ func isScalarSyntaxNode(node ast.Node, aliases map[token.Pos]bool) bool {
 }
 
 func isGeneratedModelField(expression ast.Expr, variables map[token.Pos]bool) bool {
-	selector, selectorFound := unparen(expression).(*ast.SelectorExpr)
-	if !selectorFound {
+	var rootOf func(ast.Expr) (*ast.Ident, bool)
+
+	rootOf = func(target ast.Expr) (*ast.Ident, bool) {
+		switch typed := unparen(target).(type) {
+		case *ast.Ident:
+			return typed, true
+		case *ast.SelectorExpr:
+			return rootOf(typed.X)
+		case *ast.IndexExpr:
+			return rootOf(typed.X)
+		case *ast.StarExpr:
+			return rootOf(typed.X)
+		default:
+			return nil, false
+		}
+	}
+
+	if _, isSelector := unparen(expression).(*ast.SelectorExpr); !isSelector {
 		return false
 	}
 
-	for {
-		base, ok := unparen(selector.X).(*ast.SelectorExpr)
-		if !ok {
-			break
-		}
+	root, found := rootOf(expression)
 
-		selector = base
-	}
-
-	root, ok := unparen(selector.X).(*ast.Ident)
-
-	return ok && variables[identifierObjectPosition(root)]
+	return found && variables[identifierObjectPosition(root)]
 }
 
 func checkEndpointCallSite(root string) error {

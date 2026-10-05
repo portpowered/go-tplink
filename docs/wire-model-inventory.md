@@ -101,6 +101,26 @@ Every concrete component has a generated declaration and a package-resolved use.
 
 The route-level `POST /` schema lives in `api/openapi.yaml`; compatibility request-parameter aliases are generated from it by `pkg/dependencymodels/config-route-compat.yaml` into `pkg/dependencymodels/cloud_request_compat.gen.go` and re-exported from `pkg/generatedwire/compat.gen.go`. The compatibility-only types `SendCloudRequestParams` and `SendCloudRequestJSONRequestBody` preserve the historical exported API, while active builders use concrete request DTOs.
 
+<!-- wireinventory:anonymous-models:start -->
+
+## Anonymous generated model object inventory
+
+Each row maps an inline schema object to its anonymous generated Go field path and the parent component's actual use. This block is generated from the checked-in schemas, generated Go AST, and component call-site records.
+
+| Schema owner and JSON path | Generated Go field path | Generator output | Generator command | Actual call site |
+| --- | --- | --- | --- | --- |
+| `api/passthrough.openapi.yaml#LightingGetLightStateCommand/properties/smartlife.iot.smartbulb.lightingservice` | `pkg/dependencymodels.LightingGetLightStateCommand.SmartlifeIotSmartbulbLightingservice` (anonymous struct) | `pkg/dependencymodels/passthrough.gen.go` | `oapi-codegen v2.8.0 -config pkg/dependencymodels/config-passthrough.yaml api/passthrough.openapi.yaml` | pkg/tplink/client_lighting.go:GetLightState |
+| `api/passthrough.openapi.yaml#LightingTransitionLightStateCommand/properties/smartlife.iot.smartbulb.lightingservice` | `pkg/dependencymodels.LightingTransitionLightStateCommand.SmartlifeIotSmartbulbLightingservice` (anonymous struct) | `pkg/dependencymodels/passthrough.gen.go` | `oapi-codegen v2.8.0 -config pkg/dependencymodels/config-passthrough.yaml api/passthrough.openapi.yaml` | pkg/tplink/client_lighting.go:lightingTransitionCommand |
+| `api/passthrough.openapi.yaml#SystemGetSysInfoCommand/properties/system` | `pkg/dependencymodels.SystemGetSysInfoCommand.System` (anonymous struct) | `pkg/dependencymodels/passthrough.gen.go` | `oapi-codegen v2.8.0 -config pkg/dependencymodels/config-passthrough.yaml api/passthrough.openapi.yaml` | pkg/tplink/client_power.go:GetPowerState |
+| `api/passthrough.openapi.yaml#SystemRebootCommand/properties/system` | `pkg/dependencymodels.SystemRebootCommand.System` (anonymous struct) | `pkg/dependencymodels/passthrough.gen.go` | `oapi-codegen v2.8.0 -config pkg/dependencymodels/config-passthrough.yaml api/passthrough.openapi.yaml` | pkg/tplink/client_power.go:Reboot |
+| `api/passthrough.openapi.yaml#SystemRebootCommand/properties/system/properties/reboot` | `pkg/dependencymodels.SystemRebootCommand.System.Reboot` (anonymous struct) | `pkg/dependencymodels/passthrough.gen.go` | `oapi-codegen v2.8.0 -config pkg/dependencymodels/config-passthrough.yaml api/passthrough.openapi.yaml` | pkg/tplink/client_power.go:Reboot |
+| `api/passthrough.openapi.yaml#SystemSetDevAliasCommand/properties/system` | `pkg/dependencymodels.SystemSetDevAliasCommand.System` (anonymous struct) | `pkg/dependencymodels/passthrough.gen.go` | `oapi-codegen v2.8.0 -config pkg/dependencymodels/config-passthrough.yaml api/passthrough.openapi.yaml` | pkg/tplink/client_manage.go:SetAlias |
+| `api/passthrough.openapi.yaml#SystemSetDevAliasCommand/properties/system/properties/set_dev_alias` | `pkg/dependencymodels.SystemSetDevAliasCommand.System.SetDevAlias` (anonymous struct) | `pkg/dependencymodels/passthrough.gen.go` | `oapi-codegen v2.8.0 -config pkg/dependencymodels/config-passthrough.yaml api/passthrough.openapi.yaml` | pkg/tplink/client_manage.go:SetAlias |
+| `api/passthrough.openapi.yaml#SystemSetRelayStateCommand/properties/system` | `pkg/dependencymodels.SystemSetRelayStateCommand.System` (anonymous struct) | `pkg/dependencymodels/passthrough.gen.go` | `oapi-codegen v2.8.0 -config pkg/dependencymodels/config-passthrough.yaml api/passthrough.openapi.yaml` | pkg/tplink/client_power.go:TurnOn and TurnOff |
+| `api/passthrough.openapi.yaml#SystemSetRelayStateCommand/properties/system/properties/set_relay_state` | `pkg/dependencymodels.SystemSetRelayStateCommand.System.SetRelayState` (anonymous struct) | `pkg/dependencymodels/passthrough.gen.go` | `oapi-codegen v2.8.0 -config pkg/dependencymodels/config-passthrough.yaml api/passthrough.openapi.yaml` | pkg/tplink/client_power.go:TurnOn and TurnOff |
+
+<!-- wireinventory:anonymous-models:end -->
+
 ## HTTP endpoint inventory
 
 | Endpoint and exchange | Schema owner | Generated method/path and metadata | Actual call site |
