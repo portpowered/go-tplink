@@ -33,7 +33,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - name: Generate Fumadocs API reference
-        uses: portpowered/api-docs-website-github-action@88d47570320f9551a1c6d1f07437285e91f2bffa
+        uses: portpowered/api-docs-website-github-action@f7bb9340238620b058d6bff9fb953a9efb2f3bd5
         with:
           title: TP-Link - implementation-derived
           openapi: api/openapi.yaml
