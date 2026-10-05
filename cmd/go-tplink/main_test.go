@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	testBaseURL        = "https://api.example.test"
+	testBaseURL        = "https://api.example.test/"
 	testToken          = "session-token-secret"
 	testEmail          = "person@example.com"
 	testPassword       = "password-not-output"

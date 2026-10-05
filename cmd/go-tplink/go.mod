@@ -3,7 +3,7 @@ module github.com/portpowered/go-tplink/cmd/go-tplink
 go 1.24.0
 
 require (
-	github.com/portpowered/go-tplink v0.2.1
+	github.com/portpowered/go-tplink v0.3.0
 	golang.org/x/sys v0.39.0
 	golang.org/x/term v0.38.0
 )

@@ -9,17 +9,10 @@ Use `go-tplink` to sign in, inspect devices, and try plug or lighting commands.
 
 ## Install
 
-The first standalone CLI release is pending. Until it is published, run from a checkout:
+Install the released command with Go 1.24 or later:
 
 ```sh
-cd cmd/go-tplink
-go run . --help
-```
-
-After publication, install the command with Go 1.24 or later:
-
-```sh
-go install github.com/portpowered/go-tplink/cmd/go-tplink@latest
+go install github.com/portpowered/go-tplink/cmd/go-tplink@v0.3.0
 ```
 
 The executable is written to `GOBIN`, or `GOPATH/bin` when `GOBIN` is unset.
