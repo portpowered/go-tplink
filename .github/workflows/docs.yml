@@ -11,6 +11,8 @@ on:
       - "Makefile"
       - "tools/render_replay_coverage.py"
       - "tools/test_render_replay_coverage.py"
+      - "tools/check_site_links.py"
+      - "tools/schemalinks/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -31,7 +33,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - name: Generate Fumadocs API reference
-        uses: portpowered/api-docs-website-github-action@v0.3.0
+        uses: portpowered/api-docs-website-github-action@88d47570320f9551a1c6d1f07437285e91f2bffa
         with:
           title: TP-Link - implementation-derived
           openapi: api/openapi.yaml
@@ -43,13 +45,24 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Check schema-supplied links
+        run: go run ./tools/schemalinks -site site -schemas api/openapi.yaml -base-path /go-tplink
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+      - name: Check rendered site links
+        run: python tools/check_site_links.py site
       - name: Generate replay coverage report
         run: |
           python -m unittest discover -s tools -p test_render_replay_coverage.py
           python tools/render_replay_coverage.py --site-dir site
+      - name: Upload rendered API documentation for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-api-docs-${{ github.sha }}
+          path: site/
+          retention-days: 14
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:

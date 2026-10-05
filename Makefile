@@ -5,9 +5,9 @@ PUBLIC_MODULE ?= github.com/portpowered/go-tplink
 PUBLIC_PACKAGES ?= pkg/tplink,pkg/tplinkmodels
 
 .DEFAULT_GOAL := check
-.PHONY: check build test vet lint fmt format-check tidy-check replay-coverage wire-inventory api-compatibility generate-api
+.PHONY: check build test vet lint fmt format-check tidy-check replay-coverage wire-inventory schema-examples api-compatibility generate-api
 
-check: lint build test vet tidy-check format-check replay-coverage wire-inventory
+check: lint build test vet tidy-check format-check replay-coverage wire-inventory schema-examples
 
 build:
 	$(GO) build ./...
@@ -47,6 +47,9 @@ replay-coverage:
 
 wire-inventory:
 	$(GO) run ./tools/wireinventory
+
+schema-examples:
+	$(GO) run ./tools/schemaexamples
 
 fmt:
 	$(GO) fmt ./...

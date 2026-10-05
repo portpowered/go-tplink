@@ -5,7 +5,7 @@ package dependencymodels
 
 // SendCloudRequestParams defines parameters for SendCloudRequest.
 type SendCloudRequestParams struct {
-	// Token Session token. Omit for login. Required by the implemented client for getDeviceList and passthrough requests.
+	// Token Session token. Omit for login; the client requires it for getDeviceList and passthrough.
 	Token *string `form:"token,omitempty" json:"token,omitempty"`
 }
 

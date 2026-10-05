@@ -415,7 +415,15 @@ func anonymousModelInventoryBlock(inventoryText string) (int, int, error) {
 	return start, end, nil
 }
 
+func normalizeAnonymousInventoryLineEndings(inventoryText string) string {
+	inventoryText = strings.ReplaceAll(inventoryText, "\r\n", "\n")
+
+	return strings.ReplaceAll(inventoryText, "\r", "\n")
+}
+
 func checkGeneratedAnonymousModelInventory(root, inventoryText string) error {
+	inventoryText = normalizeAnonymousInventoryLineEndings(inventoryText)
+
 	start, end, err := anonymousModelInventoryBlock(inventoryText)
 	if err != nil {
 		return err
@@ -443,7 +451,7 @@ func writeGeneratedAnonymousModelInventory(root string) error {
 		return fmt.Errorf("read wire model inventory for generation: %w", err)
 	}
 
-	text := string(contents)
+	text := normalizeAnonymousInventoryLineEndings(string(contents))
 
 	start, end, err := anonymousModelInventoryBlock(text)
 	if err != nil {

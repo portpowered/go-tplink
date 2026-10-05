@@ -103,6 +103,8 @@ jobs:
         run: go build ./...
       - name: Test
         run: go test -race ./...
+      - name: Validate canonical schema examples
+        run: make schema-examples
       - name: Enforce replay coverage floor
         run: go run ./tools/replaycoverage
       - name: Enforce schema-backed wire payload inventory

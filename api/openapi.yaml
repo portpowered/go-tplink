@@ -49,9 +49,11 @@ paths:
           required: false
           x-go-wire-constant-name: TokenQueryKey
           description: |
-            Session token. Omit for login. Required by the implemented client for getDeviceList and passthrough requests.
+            Session token. Omit for login; the client requires it for getDeviceList and passthrough.
           schema:
             type: string
+            example: synthetic-session-token
+            x-example-evidence: synthetic
       requestBody:
         required: true
         description: One method-specific JSON envelope per request.
@@ -65,6 +67,7 @@ paths:
             examples:
               login:
                 summary: Login request (synthetic example)
+                x-example-evidence: synthetic
                 value:
                   method: login
                   params:
@@ -74,10 +77,12 @@ paths:
                     terminalUUID: go-tplink-client
               getDeviceList:
                 summary: Device-list request (synthetic example)
+                x-example-evidence: synthetic
                 value:
                   method: getDeviceList
               turnOn:
                 summary: Turn a plug on
+                x-example-evidence: synthetic
                 value:
                   method: passthrough
                   params:
@@ -85,6 +90,7 @@ paths:
                     requestData: '{"system":{"set_relay_state":{"state":1}}}'
               turnOff:
                 summary: Turn a plug off
+                x-example-evidence: synthetic
                 value:
                   method: passthrough
                   params:
@@ -92,6 +98,7 @@ paths:
                     requestData: '{"system":{"set_relay_state":{"state":0}}}'
               getPowerState:
                 summary: Read plug system information
+                x-example-evidence: synthetic
                 value:
                   method: passthrough
                   params:
@@ -99,6 +106,7 @@ paths:
                     requestData: '{"system":{"get_sysinfo":""}}'
               reboot:
                 summary: Reboot a plug
+                x-example-evidence: synthetic
                 value:
                   method: passthrough
                   params:
@@ -106,6 +114,7 @@ paths:
                     requestData: '{"system":{"reboot":{"delay":1}}}'
               setAlias:
                 summary: Set a device alias
+                x-example-evidence: synthetic
                 value:
                   method: passthrough
                   params:
@@ -113,6 +122,7 @@ paths:
                     requestData: '{"system":{"set_dev_alias":{"alias":"Desk Plug"}}}'
               getLightState:
                 summary: Read bulb light state
+                x-example-evidence: synthetic
                 value:
                   method: passthrough
                   params:
@@ -120,6 +130,7 @@ paths:
                     requestData: '{"smartlife.iot.smartbulb.lightingservice":{"get_light_state":""}}'
               setBrightness:
                 summary: Set bulb brightness
+                x-example-evidence: synthetic
                 value:
                   method: passthrough
                   params:
@@ -127,6 +138,7 @@ paths:
                     requestData: '{"smartlife.iot.smartbulb.lightingservice":{"transition_light_state":{"brightness":50}}}'
               setColorTemp:
                 summary: Set bulb color temperature
+                x-example-evidence: synthetic
                 value:
                   method: passthrough
                   params:
@@ -134,6 +146,7 @@ paths:
                     requestData: '{"smartlife.iot.smartbulb.lightingservice":{"transition_light_state":{"color_temp":4000}}}'
               setColor:
                 summary: Set bulb hue and saturation
+                x-example-evidence: synthetic
                 value:
                   method: passthrough
                   params:
@@ -141,6 +154,7 @@ paths:
                     requestData: '{"smartlife.iot.smartbulb.lightingservice":{"transition_light_state":{"hue":240,"saturation":80}}}'
               setLightState:
                 summary: Set multiple bulb state fields
+                x-example-evidence: synthetic
                 value:
                   method: passthrough
                   params:
@@ -157,16 +171,18 @@ paths:
               examples:
                 loginSuccess:
                   summary: Successful login response (synthetic shape)
+                  x-example-evidence: synthetic
                   value:
                     error_code: 0
                     result:
                       accountId: example-account-id
-                      token: example-session-token
+                      token: synthetic-session-token
                       email: user@example.test
                       regTime: '2020-01-01 00:00:00'
                       countryCode: US
                 deviceListSuccess:
                   summary: Device-list response (synthetic shape)
+                  x-example-evidence: synthetic
                   value:
                     error_code: 0
                     result:
@@ -192,26 +208,100 @@ paths:
                           is_dimmable: 1
                           is_color: 1
                           is_variable_color_temp: 1
+                        - deviceType: IOT.RANGEEXTENDER.SMARTPLUG
+                          deviceId: example-range-extender-plug-id
+                          alias: Workshop Plug
+                          deviceModel: RE270K
                         - deviceType: IOT.FUTURE.DEVICE
                           deviceId: example-other-id
                           alias: New Device Type
                 emptyDeviceList:
                   summary: Empty device list (synthetic shape)
+                  x-example-evidence: synthetic
                   value:
                     error_code: 0
                     result:
                       deviceList: []
                 passthroughSuccess:
                   summary: Passthrough response (synthetic shape)
+                  x-example-evidence: synthetic
                   value:
                     error_code: 0
                     result:
                       responseData: '{"system":{"set_relay_state":{"err_code":0}}}'
+                plugStateSuccess:
+                  summary: Plug system-information response (synthetic shape)
+                  x-example-evidence: synthetic
+                  value:
+                    error_code: 0
+                    result:
+                      responseData: '{"system":{"get_sysinfo":{"sw_ver":"1.5.6 Build 191125 Rel.083657","hw_ver":"2.1","model":"HS105(US)","deviceId":"example-plug-id","alias":"Desk Plug","relay_state":1,"on_time":3600,"err_code":0}}}'
+                plugCommandSuccess:
+                  summary: Plug command acknowledgement (synthetic shape)
+                  x-example-evidence: synthetic
+                  value:
+                    error_code: 0
+                    result:
+                      responseData: '{"system":{"set_relay_state":{"err_code":0}}}'
+                rebootSuccess:
+                  summary: Plug reboot acknowledgement (synthetic shape)
+                  x-example-evidence: synthetic
+                  value:
+                    error_code: 0
+                    result:
+                      responseData: '{"system":{"reboot":{"err_code":0}}}'
+                aliasSuccess:
+                  summary: Device alias update acknowledgement (synthetic shape)
+                  x-example-evidence: synthetic
+                  value:
+                    error_code: 0
+                    result:
+                      responseData: '{"system":{"set_dev_alias":{"err_code":0}}}'
+                bulbStateSuccess:
+                  summary: Bulb light-state response (synthetic shape)
+                  x-example-evidence: synthetic
+                  value:
+                    error_code: 0
+                    result:
+                      responseData: '{"smartlife.iot.smartbulb.lightingservice":{"get_light_state":{"on_off":1,"brightness":75,"hue":240,"saturation":80,"color_temp":0,"mode":"normal","err_code":0}}}'
+                bulbCommandSuccess:
+                  summary: Bulb state-update acknowledgement (synthetic shape)
+                  x-example-evidence: synthetic
+                  value:
+                    error_code: 0
+                    result:
+                      responseData: '{"smartlife.iot.smartbulb.lightingservice":{"transition_light_state":{"err_code":0}}}'
                 cloudError:
                   summary: Expired-token error (synthetic shape)
+                  x-example-evidence: synthetic
                   value:
                     error_code: -20651
                     msg: Token expired
+                loginError:
+                  summary: Login authentication error (synthetic shape)
+                  x-example-evidence: synthetic
+                  value:
+                    error_code: -20601
+                    msg: Incorrect email or password
+                rateLimitError:
+                  summary: Rate-limit error (synthetic shape)
+                  x-example-evidence: synthetic
+                  value:
+                    error_code: -20004
+                    msg: Rate limit exceeded
+                parameterError:
+                  summary: Cloud parameter error (synthetic shape)
+                  x-example-evidence: synthetic
+                  value:
+                    error_code: -20104
+                    msg: Bad request or parameter error
+                deviceListError:
+                  summary: Device-command failure inside a cloud response (synthetic shape)
+                  x-example-evidence: synthetic
+                  value:
+                    error_code: 0
+                    result:
+                      responseData: '{"err_code":-1,"err_msg":"module not support"}'
         '4XX':
           description: Non-2xx HTTP response. The client reports the HTTP status and does not decode the body as a cloud envelope.
         '5XX':

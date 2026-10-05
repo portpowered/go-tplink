@@ -37,6 +37,12 @@ preserved, and redactions. Remove credentials, tokens, cookies, email addresses,
 account identifiers, device IDs, MAC addresses, and other personal or
 account-linked data before committing it.
 
+Canonical OpenAPI examples in `api/` are a separate synthetic source. They
+carry `x-example-evidence: synthetic` and use placeholder account, token, and
+device values. They illustrate supported request and response envelopes,
+including JSON-encoded passthrough payloads; they do not add capture evidence
+or replace the paired replay fixtures.
+
 ## Local checks
 
 Run these from the repository root:

@@ -12,6 +12,7 @@ linters:
             - $all
             - "!$test"
             - "!**/*.gen.go"
+            - "!**/tools/schemaexamples/**"
           allow:
             - $gostd
             - github.com/portpowered/go-tplink
@@ -21,6 +22,7 @@ linters:
           list-mode: strict
           files:
             - $test
+            - "!**/tools/schemaexamples/**"
           allow:
             - $gostd
             - github.com/portpowered/go-tplink
@@ -35,6 +37,15 @@ linters:
             - $gostd
             - github.com/portpowered/go-tplink
             - github.com/oapi-codegen/runtime
+
+        SchemaExamples:
+          list-mode: strict
+          files:
+            - "**/tools/schemaexamples/**"
+          allow:
+            - $gostd
+            - github.com/santhosh-tekuri/jsonschema/v6
+            - gopkg.in/yaml.v3
     forbidigo:
       # Command-line examples and tools intentionally write formatted output.
       # Keep the built-in debug print functions forbidden.

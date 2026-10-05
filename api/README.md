@@ -25,3 +25,13 @@ the generated output matches the repository.
 
 See the [wire model inventory](../docs/wire-model-inventory.md) for the
 schema-to-generated-model-to-client-use mapping and its inventory gates.
+
+## Synthetic examples
+
+The OpenAPI operation examples and nested passthrough payload examples are
+synthetic wire-shape illustrations. Each named example is marked with
+`x-example-evidence: synthetic`; they are not live captures or evidence of
+responses returned by the provider. Placeholder account, token, and device
+values must remain clearly synthetic. Embedded JSON strings in
+`params.requestData` and `result.responseData` are checked against their nested
+schemas by `go run ./tools/schemaexamples` and the repository checks.

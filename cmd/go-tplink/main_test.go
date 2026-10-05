@@ -17,15 +17,24 @@ import (
 )
 
 const (
-	testBaseURL     = "https://api.example.test"
-	testToken       = "session-token-secret"
-	testEmail       = "person@example.com"
-	testPassword    = "password-not-output"
-	testAuthCommand = "auth"
-	testJSONFlag    = "--json"
-	testBulbCommand = "bulb"
-	testBulbDevice  = "bulb-1"
+	testBaseURL        = "https://api.example.test"
+	testToken          = "session-token-secret"
+	testEmail          = "person@example.com"
+	testPassword       = "password-not-output"
+	testAuthCommand    = "auth"
+	testLoginCommand   = "login"
+	testDevicesCommand = "devices"
+	testListCommand    = "list"
+	testPlugCommand    = "plug"
+	testJSONFlag       = "--json"
+	testBulbCommand    = "bulb"
+	testBulbDevice     = "bulb-1"
+	testPlugDevice     = "plug-1"
+	testEmailEnvVar    = "TPLINK_EMAIL"
+	testPasswordEnvVar = "TPLINK_PASSWORD"
 )
+
+const deviceListRequestBody = `{"method":"getDeviceList"}`
 
 const loginRequestBody = `{"method":"login","params":{"appType":"Tapo_Android",` +
 	`"cloudPassword":"` + testPassword + `","cloudUserName":"` + testEmail + `",` +
@@ -242,16 +251,16 @@ func TestLoginUsesPairedRequestAndStoresTokenWithoutPrintingSecrets(t *testing.T
 	deps, tracked := dependenciesForTransport(t, tokenPath, transport)
 	deps.getenv = func(name string) string {
 		switch name {
-		case "TPLINK_EMAIL":
+		case testEmailEnvVar:
 			return testEmail
-		case "TPLINK_PASSWORD":
+		case testPasswordEnvVar:
 			return testPassword
 		default:
 			return ""
 		}
 	}
 
-	output, err := runCommand(context.Background(), t, deps, []string{testAuthCommand, "login"})
+	output, err := runCommand(context.Background(), t, deps, []string{testAuthCommand, testLoginCommand})
 	if err != nil {
 		t.Fatalf("login failed: %v", err)
 	}
@@ -294,18 +303,18 @@ func TestLoginAuthFailureRedactsSecretsAndClosesClient(t *testing.T) {
 	}}}
 	deps, tracked := dependenciesForTransport(t, tokenPath, transport)
 	deps.getenv = func(name string) string {
-		if name == "TPLINK_EMAIL" {
+		if name == testEmailEnvVar {
 			return testEmail
 		}
 
-		if name == "TPLINK_PASSWORD" {
+		if name == testPasswordEnvVar {
 			return testPassword
 		}
 
 		return ""
 	}
 
-	_, err := runCommand(context.Background(), t, deps, []string{testAuthCommand, "login"})
+	_, err := runCommand(context.Background(), t, deps, []string{testAuthCommand, testLoginCommand})
 	if err == nil {
 		t.Fatal("login succeeded despite a paired authentication failure")
 	}
@@ -314,7 +323,7 @@ func TestLoginAuthFailureRedactsSecretsAndClosesClient(t *testing.T) {
 		t.Fatalf("login error contains credential material: %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "login") {
+	if !strings.Contains(err.Error(), testLoginCommand) {
 		t.Fatalf("login error lacks operation context: %v", err)
 	}
 
@@ -340,20 +349,20 @@ func TestDevicesListAndPlugStateConsumePairedExchanges(t *testing.T) {
 	listTransport := &pairedTransport{next: 0, exchanges: []pairedExchange{{
 		method:       http.MethodPost,
 		url:          testBaseURL + "?token=" + testToken,
-		body:         `{"method":"getDeviceList"}`,
+		body:         deviceListRequestBody,
 		status:       http.StatusOK,
 		responseBody: deviceListResponseBody,
 	}}}
 	listDeps, listClient := dependenciesForTransport(t, tokenPath, listTransport)
 
 	listOutput, err := runCommand(
-		context.Background(), t, listDeps, []string{"devices", "list", testJSONFlag},
+		context.Background(), t, listDeps, []string{testDevicesCommand, testListCommand, testJSONFlag},
 	)
 	if err != nil {
 		t.Fatalf("list devices: %v", err)
 	}
 
-	if !strings.Contains(listOutput, "plug-1") || strings.Contains(listOutput, "AA:BB:CC:DD:EE:FF") ||
+	if !strings.Contains(listOutput, testPlugDevice) || strings.Contains(listOutput, "AA:BB:CC:DD:EE:FF") ||
 		strings.Contains(listOutput, testToken) {
 		t.Fatalf("device list output has unexpected fields or secrets: %q", listOutput)
 	}
@@ -374,7 +383,7 @@ func TestDevicesListAndPlugStateConsumePairedExchanges(t *testing.T) {
 	stateDeps, stateClient := dependenciesForTransport(t, tokenPath, stateTransport)
 
 	stateOutput, err := runCommand(
-		context.Background(), t, stateDeps, []string{"plug", "state", testJSONFlag, "plug-1"},
+		context.Background(), t, stateDeps, []string{testPlugCommand, "state", testJSONFlag, testPlugDevice},
 	)
 	if err != nil {
 		t.Fatalf("read plug state: %v", err)
@@ -528,7 +537,7 @@ func TestPlugMutationsUsePairedRequests(t *testing.T) {
 				context.Background(),
 				t,
 				deps,
-				[]string{"plug", test.operation, "plug-1"},
+				[]string{testPlugCommand, test.operation, testPlugDevice},
 			)
 			if err != nil {
 				t.Fatalf("command failed: %v", err)
@@ -556,7 +565,7 @@ func TestCanceledRequestClosesClientWithoutConsumingPair(t *testing.T) {
 	transport := &pairedTransport{next: 0, exchanges: []pairedExchange{{
 		method:       http.MethodPost,
 		url:          testBaseURL + "?token=" + testToken,
-		body:         `{"method":"getDeviceList"}`,
+		body:         deviceListRequestBody,
 		status:       http.StatusOK,
 		responseBody: `{"error_code":0,"result":{"deviceList":[]}}`,
 	}}}
@@ -564,7 +573,7 @@ func TestCanceledRequestClosesClientWithoutConsumingPair(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := runCommand(ctx, t, deps, []string{"devices", "list"})
+	_, err := runCommand(ctx, t, deps, []string{testDevicesCommand, "list"})
 	if err == nil || !strings.Contains(err.Error(), "canceled") || strings.Contains(err.Error(), testToken) {
 		t.Fatalf("unexpected canceled request error: %v", err)
 	}

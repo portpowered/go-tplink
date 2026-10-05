@@ -45,6 +45,7 @@ components:
             to see the PassthroughCommand schema; do not send that object in
             place of the string. The Guides list the fields for each command.
           example: '{"system":{"set_relay_state":{"state":1}}}'
+          x-example-evidence: synthetic
     PassthroughCommand:
       description: |
         Inner JSON value after decoding params.requestData. The client sends one command under one namespace per request.
@@ -235,6 +236,7 @@ components:
             JSON-encoded device response. Decode the string to interpret
             PassthroughCommandResult. Device errors may also appear at the top level.
           example: '{"system":{"get_sysinfo":{"relay_state":1,"on_time":3600,"err_code":0}}}'
+          x-example-evidence: synthetic
     PassthroughCommandResult:
       description: Inner JSON value after decoding result.responseData.
       anyOf:

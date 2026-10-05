@@ -117,6 +117,10 @@ func newReplayTransport() *replayTransport {
 }
 
 func (transport *replayTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request == nil {
+		return nil, replayDiagnosticError("request is missing")
+	}
+
 	attempt, err := transport.prepareReplayAttempt(request)
 	if err != nil {
 		return nil, err
@@ -133,7 +137,7 @@ func (transport *replayTransport) prepareReplayAttempt(request *http.Request) (r
 
 		requestBody, err = io.ReadAll(request.Body)
 		if err != nil {
-			return replayAttempt{}, fmt.Errorf("read request body: %w", err)
+			return replayAttempt{}, replayDiagnosticError("request body could not be read")
 		}
 	}
 
@@ -425,12 +429,35 @@ func matchFixtureRequest(request *http.Request, body []byte, operation string, e
 		return replayDiagnosticErrorf("operation %q is not in %v", operation, want.Operations)
 	}
 
+	err = matchFixtureRequestFraming(request, body)
+	if err != nil {
+		return err
+	}
+
 	return matchFixtureBody(body, want.Bodies)
 }
 
 func matchFixtureURLIdentity(request *http.Request, want fixtureRequest) error {
+	err := validateReplayRequestURL(request)
+	if err != nil {
+		return err
+	}
+
+	err = validateFixtureOrigin(want.Origin)
+	if err != nil {
+		return err
+	}
+
+	return matchReplayRequestTarget(request, want)
+}
+
+func validateReplayRequestURL(request *http.Request) error {
 	if request.URL == nil {
 		return replayDiagnosticError("request URL is missing")
+	}
+
+	if request.RequestURI != "" {
+		return replayDiagnosticError("request RequestURI is unsupported for outbound replay")
 	}
 
 	if request.URL.User != nil {
@@ -441,26 +468,30 @@ func matchFixtureURLIdentity(request *http.Request, want fixtureRequest) error {
 		return replayDiagnosticError("request URL opaque form is unsupported")
 	}
 
-	if request.Host != "" && request.Host != request.URL.Host {
+	if request.URL.Fragment != "" || request.URL.RawFragment != "" {
+		return replayDiagnosticError("request URL fragment is unsupported")
+	}
+
+	if request.Host != "" && !strings.EqualFold(request.Host, request.URL.Host) {
 		return replayDiagnosticError("request Host override does not match URL authority")
 	}
 
-	err := validateFixtureOrigin(want.Origin)
-	if err != nil {
-		return err
+	return nil
+}
+
+func matchReplayRequestTarget(request *http.Request, want fixtureRequest) error {
+	requestOrigin := request.URL.Scheme + "://" + request.URL.Host
+
+	if request.Method != want.Method {
+		return replayDiagnosticError("request method does not match fixture")
 	}
 
-	requestOrigin := request.URL.Scheme + "://" + request.URL.Host
-	if request.Method != want.Method || requestOrigin != want.Origin || request.URL.EscapedPath() != want.Path {
-		return replayDiagnosticErrorf(
-			"request identity mismatch: got %s %s%s, want %s %s%s",
-			request.Method,
-			requestOrigin,
-			request.URL.EscapedPath(),
-			want.Method,
-			want.Origin,
-			want.Path,
-		)
+	if requestOrigin != want.Origin {
+		return replayDiagnosticError("request origin authority does not match fixture")
+	}
+
+	if request.URL.EscapedPath() != want.Path {
+		return replayDiagnosticError("request escaped path does not match fixture")
 	}
 
 	return nil
@@ -476,15 +507,40 @@ func validateFixtureOrigin(origin string) error {
 }
 
 func isValidFixtureOrigin(origin *url.URL) bool {
-	return origin.User == nil &&
-		(origin.Scheme == "http" || origin.Scheme == "https") &&
-		origin.Host != "" && origin.Path == "" && origin.RawQuery == "" &&
-		!origin.ForceQuery && origin.Fragment == "" && origin.Opaque == ""
+	if origin.User != nil || origin.Opaque != "" {
+		return false
+	}
+
+	if origin.Host == "" || !isSupportedFixtureScheme(origin.Scheme) {
+		return false
+	}
+
+	if hasFixtureOriginPath(origin) || hasFixtureOriginQuery(origin) || hasFixtureOriginFragment(origin) {
+		return false
+	}
+
+	return true
+}
+
+func isSupportedFixtureScheme(scheme string) bool {
+	return scheme == "http" || scheme == "https"
+}
+
+func hasFixtureOriginPath(origin *url.URL) bool {
+	return origin.Path != "" || origin.RawPath != ""
+}
+
+func hasFixtureOriginQuery(origin *url.URL) bool {
+	return origin.RawQuery != "" || origin.ForceQuery
+}
+
+func hasFixtureOriginFragment(origin *url.URL) bool {
+	return origin.Fragment != "" || origin.RawFragment != ""
 }
 
 func matchFixtureQuery(actual, expected url.Values) error {
 	if len(actual) != len(expected) {
-		return replayDiagnosticErrorf("query = %v, want %v", actual, expected)
+		return replayDiagnosticError("request query parameter names do not match fixture")
 	}
 
 	for name, values := range expected {
@@ -502,7 +558,7 @@ func matchFixtureHeaders(actual http.Header, expected map[string][]string) error
 	expectedValues := canonicalHeaderValues(http.Header(expected))
 
 	if len(actualValues) != len(expectedValues) {
-		return replayDiagnosticErrorf("header names = %v, want %v", headerNames(actualValues), headerNames(expectedValues))
+		return replayDiagnosticErrorf("request header names %v do not match fixture", headerNames(actualValues))
 	}
 
 	for name, values := range expectedValues {
@@ -544,12 +600,12 @@ func headerNames(headers map[string][]string) []string {
 
 func compareFixtureValues(label, name string, actual, expected []string) error {
 	if len(actual) != len(expected) {
-		return replayDiagnosticErrorf("%s %s = %v, want %v", label, name, actual, expected)
+		return replayDiagnosticErrorf("request %s field %q does not match fixture", label, name)
 	}
 
 	for index, value := range expected {
 		if actual[index] != value {
-			return replayDiagnosticErrorf("%s %s[%d] = %q, want %q", label, name, index, actual[index], value)
+			return replayDiagnosticErrorf("request %s field %q does not match fixture", label, name)
 		}
 	}
 
@@ -560,12 +616,56 @@ func containsString(values []string, expected string) bool {
 	return slices.Contains(values, expected)
 }
 
+func matchFixtureRequestFraming(request *http.Request, body []byte) error {
+	if request.ContentLength != int64(len(body)) {
+		return replayDiagnosticError("request ContentLength does not match fixture")
+	}
+
+	if len(request.TransferEncoding) != 0 {
+		return replayDiagnosticError("request TransferEncoding does not match fixture")
+	}
+
+	if request.Close {
+		return replayDiagnosticError("request Close does not match fixture")
+	}
+
+	return matchFixtureGetBody(request, body)
+}
+
+func matchFixtureGetBody(request *http.Request, body []byte) error {
+	if request.GetBody == nil {
+		if len(body) != 0 {
+			return replayDiagnosticError("request GetBody is missing")
+		}
+
+		return nil
+	}
+
+	replayBody, err := request.GetBody()
+	if err != nil || replayBody == nil {
+		return replayDiagnosticError("request GetBody could not be read")
+	}
+
+	replayed, readErr := io.ReadAll(replayBody)
+
+	closeErr := replayBody.Close()
+	if readErr != nil || closeErr != nil {
+		return replayDiagnosticError("request GetBody could not be read")
+	}
+
+	if !bytes.Equal(replayed, body) {
+		return replayDiagnosticError("request GetBody does not match request body")
+	}
+
+	return nil
+}
+
 func matchFixtureBody(body []byte, expectedBodies []json.RawMessage) error {
 	var actual any
 
 	decodeErr := json.Unmarshal(body, &actual)
 	if decodeErr != nil {
-		return fmt.Errorf("decode request body: %w", decodeErr)
+		return replayDiagnosticError("request body is not valid JSON")
 	}
 
 	for _, expected := range expectedBodies {
