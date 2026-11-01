@@ -134,7 +134,19 @@ type LightState struct {
 	Hue        int    `json:"hue,omitempty"`
 	Mode       string `json:"mode,omitempty"`
 	OnOff      int    `json:"on_off,omitempty"`
-	Saturation int    `json:"saturation,omitempty"`
+
+	// Present Fields explicitly returned by the bulb. A present zero is distinct from an omitted value.
+	Present    *LightStatePresence `json:"present,omitempty"`
+	Saturation int                 `json:"saturation,omitempty"`
+}
+
+// LightStatePresence Fields explicitly returned by the bulb. A present zero is distinct from an omitted value.
+type LightStatePresence struct {
+	Brightness bool `json:"brightness"`
+	ColorTemp  bool `json:"colorTemp"`
+	Hue        bool `json:"hue"`
+	OnOff      bool `json:"onOff"`
+	Saturation bool `json:"saturation"`
 }
 
 // LoginRequest Account credentials used to create a cloud session.
