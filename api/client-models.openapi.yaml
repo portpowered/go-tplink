@@ -471,6 +471,8 @@ components:
       type: object
       description: Current state returned by a smart bulb.
       properties:
+        present:
+          $ref: '#/components/schemas/LightStatePresence'
         on_off:
           type: integer
           x-go-name: OnOff
@@ -499,3 +501,20 @@ components:
           type: integer
           x-go-name: ErrCode
           x-go-type-skip-optional-pointer: true
+
+    LightStatePresence:
+      type: object
+      description: Fields explicitly returned by the bulb. A present zero is distinct from an omitted value.
+      required: [onOff, brightness, hue, saturation, colorTemp]
+      properties:
+        onOff:
+          type: boolean
+          x-go-name: OnOff
+        brightness:
+          type: boolean
+        hue:
+          type: boolean
+        saturation:
+          type: boolean
+        colorTemp:
+          type: boolean

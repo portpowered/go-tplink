@@ -160,6 +160,7 @@ func (client *Client) GetLightState(
 	wireState := parsed.SmartlifeIotSmartbulbLightingservice.GetLightState
 
 	lightState := tplinkmodels.LightState{
+		Present:    lightFieldPresence(wireState),
 		OnOff:      valueOrZero(wireState.OnOff),
 		Brightness: valueOrZero(wireState.Brightness),
 		Hue:        valueOrZero(wireState.Hue),
@@ -173,6 +174,14 @@ func (client *Client) GetLightState(
 	}
 
 	return lightState, nil
+}
+
+func lightFieldPresence(state *dependencymodels.LightState) *tplinkmodels.LightStatePresence {
+	return &tplinkmodels.LightStatePresence{
+		OnOff: state.OnOff != nil, Brightness: state.Brightness != nil,
+		Hue: state.Hue != nil, Saturation: state.Saturation != nil,
+		ColorTemp: state.ColorTemp != nil,
+	}
 }
 
 // GetBrightness retrieves the current brightness of a bulb device.

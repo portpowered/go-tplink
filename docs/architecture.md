@@ -1,5 +1,12 @@
 # Client architecture
 
+`LightState.Present` records which optional numeric fields the bulb actually
+returned, including explicit zero. A nil presence object has no presence evidence
+(for example a manually constructed legacy value); consumers must not treat
+zero-valued fields in that case as fresh observations. The existing numeric
+members remain source compatible. Presence does not establish a field's range
+or the active color mode; consumers still validate those semantics.
+
 `go-tplink` is a provider client for TP-Link Kasa Cloud operations. It owns
 provider-facing login, request encoding, response decoding, and error
 classification. It does not own an application's credential store or device
