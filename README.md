@@ -13,6 +13,8 @@ operations for authentication, device listing, plug controls, bulb controls,
 and device aliases. Applications manage credential storage and their own
 device workflows.
 
+To use Kasa plugs and bulbs from ChatGPT, Claude or another AI assistant without writing code, see [TP-Link Kasa MCP](https://github.com/portpowered/port-os-smart-home-cloud-mcp/blob/main/providers/tp-link-kasa-mcp.md) in Port OS Smart Home Cloud MCP.
+
 ## Install
 
 Requires Go 1.24 or later.
